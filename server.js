@@ -1,0 +1,476 @@
+const express = require('express');
+const http = require('http');
+const socketio = require('socket.io');
+
+const app = express();
+const server = http.createServer(app);
+const io = socketio(server);
+const PORT = process.env.PORT || 3000;
+
+app.use(express.static('public'));
+
+// --- Variables de Juego ---
+const GRAVITY = 800;
+const HORIZONTAL_SPEED = 250; 
+const JUMP_VELOCITY = -500;
+const GAME_WORLD_WIDTH = 2500; 
+const GAME_WORLD_HEIGHT = 800; 
+const DEATH_Y = 850; 
+
+// --- Dash ---
+const DASH_SPEED = 900; 
+const DASH_DURATION = 0.15; 
+const DASH_COOLDOWN_TIME = 2; 
+
+// --- Boost ---
+const BOOST_MULTIPLIER = 2.0;
+const BOOST_DURATION = 3; 
+
+// --- Stun ---
+const STUN_DURATION = 2.0; 
+
+// --- Wall Jump (AJUSTADO) ---
+const WALL_SLIDE_SPEED = 100; 
+const WALL_JUMP_VELOCITY_Y = -450; 
+const WALL_JUMP_VELOCITY_X = 300; // Reducido de 350
+const WALL_JUMP_COOLDOWN = 0.15; // Reducido de 0.2
+
+let players = {}; 
+let goalFlag = {}; 
+let currentLevelIndex = -1; 
+let currentPlatforms = [];
+let currentBoostZones = [];
+let currentObstacles = []; 
+let currentWalls = []; 
+
+// --- Definición de Niveles ---
+const LEVELS = [
+    {
+        name: "La Gran Escalada (con Muros)",
+        platforms: [
+            { x: 0, y: 780, width: 500, height: 20, color: '#27ae60' }, 
+            { x: 550, y: 700, width: 150, height: 20, color: '#e67e22' },
+            { x: 600, y: 540, width: 100, height: 20, color: '#e67e22' },
+            { x: 750, y: 480, width: 150, height: 20, color: '#e67e22' },
+            { x: 950, y: 400, width: 100, height: 20, color: '#e67e22' },
+            { x: 1100, y: 320, width: 100, height: 20, color: '#e67e22' },
+            { x: 1250, y: 250, width: 150, height: 20, color: '#e67e22' },
+            { x: 1000, y: 150, width: 100, height: 20, color: '#e67e22' },
+        ],
+        walls: [ 
+            { x: 400, y: 620, width: 20, height: 100, color: '#7f8c8d' }, 
+            { x: 730, y: 480, width: 20, height: 150, color: '#7f8c8d' }, 
+            { x: 1230, y: 250, width: 20, height: 100, color: '#7f8c8d' }  
+        ],
+        boostZones: [
+            { x: 550, y: 680, width: 150, height: 20, color: '#3498db' } 
+        ],
+        obstacles: [
+            { x: 750, y: 450, width: 30, height: 30, color: '#e74c3c', min: 750, max: 900, speed: 100, dir: 1, isVertical: false },
+        ],
+        goalX: 1030, 
+        goalY: 100,  
+    },
+    // Niveles Horizontales (Restaurados)
+    {
+        name: "Montañas Iniciales",
+        platforms: [
+            { x: 0, y: 780, width: GAME_WORLD_WIDTH, height: 20, color: '#27ae60' }, 
+            { x: 100, y: 700, width: 150, height: 20, color: '#e67e22' },
+            { x: 300, y: 620, width: 100, height: 20, color: '#e67e22' },
+            { x: 500, y: 550, width: 150, height: 20, color: '#e67e22' },
+            { x: 750, y: 680, width: 120, height: 20, color: '#e67e22' },
+            { x: 900, y: 590, width: 100, height: 20, color: '#e67e22' },
+            { x: 1100, y: 520, width: 80, height: 20, color: '#e67e22' },
+            { x: 1300, y: 600, width: 150, height: 20, color: '#e67e22' },
+            { x: 1550, y: 500, width: 100, height: 20, color: '#e67e22' },
+            { x: 1700, y: 680, width: 200, height: 20, color: '#e67e22' },
+            { x: 2000, y: 550, width: 100, height: 20, color: '#e67e22' },
+        ],
+        walls: [
+             { x: 900, y: 590, width: 20, height: 100, color: '#7f8c8d' },
+        ],
+        boostZones: [
+            { x: 1300, y: 580, width: 150, height: 20, color: '#3498db' }
+        ],
+        obstacles: [
+            { x: 500, y: 520, width: 30, height: 30, color: '#e74c3c', min: 500, max: 700, speed: 100, dir: 1, isVertical: false },
+        ],
+        goalX: 2150, 
+        goalY: 500,  
+    },
+    {
+        name: "Torreones del Vacío",
+        platforms: [
+            { x: 0, y: 780, width: 200, height: 20, color: '#27ae60' }, 
+            { x: 300, y: 700, width: 100, height: 20, color: '#555' },
+            { x: 450, y: 600, width: 80, height: 20, color: '#555' },
+            { x: 600, y: 720, width: 120, height: 20, color: '#555' },
+            { x: 800, y: 650, width: 100, height: 20, color: '#555' },
+            { x: 1000, y: 550, width: 150, height: 20, color: '#555' },
+            { x: 1200, y: 680, width: 100, height: 20, color: '#555' },
+            { x: 1400, y: 580, width: 80, height: 20, color: '#555' },
+            { x: 1600, y: 700, width: 120, height: 20, color: '#555' },
+            { x: 1800, y: 600, width: 150, height: 20, color: '#555' },
+            { x: 2000, y: 500, width: 100, height: 20, color: '#555' },
+        ],
+        walls: [],
+        boostZones: [],
+        obstacles: [],
+        goalX: 2150,
+        goalY: 450,
+    },
+    {
+        name: "Pico Serpiente",
+        platforms: [
+            { x: 0, y: 780, width: 200, height: 20, color: '#27ae60' }, 
+            { x: 300, y: 700, width: 100, height: 20, color: '#8e44ad' }, 
+            { x: 100, y: 620, width: 100, height: 20, color: '#8e44ad' }, 
+            { x: 300, y: 540, width: 100, height: 20, color: '#8e44ad' }, 
+            { x: 100, y: 460, width: 100, height: 20, color: '#8e44ad' }, 
+            { x: 300, y: 380, width: 100, height: 20, color: '#8e44ad' }, 
+            { x: 100, y: 300, width: 100, height: 20, color: '#8e44ad' }, 
+            { x: 0, y: 220, width: 50, height: 20, color: '#8e44ad' },   
+        ],
+        walls: [
+            { x: 400, y: 380, width: 20, height: 320, color: '#7f8c8d' }, // Muro largo
+            { x: 80, y: 300, width: 20, height: 160, color: '#7f8c8d' }, // Muro corto
+        ],
+        boostZones: [
+            { x: 300, y: 680, width: 100, height: 20, color: '#3498db' }
+        ],
+        obstacles: [
+            { x: 150, y: 700, width: 20, height: 20, color: '#e74c3c', min: 700, max: 760, speed: 100, dir: 1, isVertical: true },
+        ],
+        goalX: 10,
+        goalY: 170, 
+    }
+];
+
+// --- Lógica de Nivel y Juego ---
+function resetGame(newLevel = true) {
+    if (newLevel) {
+        let newIndex;
+        do {
+            newIndex = Math.floor(Math.random() * LEVELS.length);
+        } while (newIndex === currentLevelIndex && LEVELS.length > 1);
+        currentLevelIndex = newIndex;
+    }
+    
+    const currentLevel = LEVELS[currentLevelIndex];
+    currentPlatforms = currentLevel.platforms;
+    currentBoostZones = currentLevel.boostZones || [];
+    currentObstacles = JSON.parse(JSON.stringify(currentLevel.obstacles || [])); 
+    currentWalls = currentLevel.walls || []; 
+
+    goalFlag = {
+        x: currentLevel.goalX,
+        y: currentLevel.goalY,
+        width: 30, height: 50, color: '#f1c40f' 
+    };
+
+    for (const id in players) {
+        resetPlayer(players[id]);
+    }
+    
+    console.log(`Nivel cargado: ${currentLevel.name}`);
+    
+    io.sockets.emit('levelData', {
+        platforms: currentPlatforms,
+        boostZones: currentBoostZones,
+        obstacles: currentObstacles, 
+        walls: currentWalls, 
+        goalFlag: goalFlag,
+        levelName: currentLevel.name
+    });
+    io.sockets.emit('gameState', { players: players }); 
+}
+
+function resetPlayer(player, death = false) {
+    if (death) {
+        player.x = player.lastSafePlatform.x;
+        player.y = player.lastSafePlatform.y;
+    } else {
+        player.x = 50;
+        player.y = 740; 
+        player.lastSafePlatform = { x: 50, y: 740 };
+        if (!death) {
+            player.vx = 0; 
+        }
+    }
+    
+    player.vy = 0;
+    player.onGround = false;
+    player.score = 0; 
+    player.lastDashTime = 0; 
+    player.isDashing = false;
+    player.dashTimer = 0;
+    player.boostTimer = 0;
+    player.stunTimer = 0; 
+    player.isWallSliding = false; 
+    player.wallSlideDir = 0;   
+    player.wallJumpTimer = 0; 
+}
+
+resetGame();
+
+function getRandomColor() {
+    const letters = '0123456789ABCDEF';
+    let color = '#';
+    for (let i = 0; i < 6; i++) {
+        color += letters[Math.floor(Math.random() * 16)];
+    }
+    return color;
+}
+
+function checkCollision(obj1, obj2) {
+    return obj1.x < obj2.x + obj2.width &&
+           obj1.x + obj1.width > obj2.x &&
+           obj1.y < obj2.y + obj2.height &&
+           obj1.y + obj1.height > obj2.y;
+}
+
+io.on('connection', (socket) => {
+    console.log('Nuevo jugador conectado:', socket.id);
+    
+    players[socket.id] = {
+        id: socket.id,
+        x: 50, y: 740, width: 20, height: 40,
+        color: getRandomColor(),
+        vx: 0, vy: 0, 
+        onGround: false, score: 0, 
+        lastDashTime: 0, 
+        isDashing: false, dashTimer: 0,
+        boostTimer: 0,
+        stunTimer: 0, 
+        isWallSliding: false, 
+        wallSlideDir: 0,   
+        wallJumpTimer: 0, 
+        lastSafePlatform: { x: 50, y: 740 }, 
+    };
+    
+    socket.emit('levelData', {
+        platforms: currentPlatforms,
+        boostZones: currentBoostZones,
+        obstacles: currentObstacles,
+        walls: currentWalls, 
+        goalFlag: goalFlag,
+        levelName: LEVELS[currentLevelIndex].name
+    });
+    socket.emit('gameState', { players: players });
+
+
+    socket.on('playerAction', (data) => {
+        const player = players[socket.id];
+        if (!player || player.score === 1 || player.stunTimer > 0) return; 
+
+        switch(data.action) {
+            case 'jump':
+                if (player.onGround) { 
+                    player.vy = JUMP_VELOCITY; 
+                    player.onGround = false;
+                } else if (player.isWallSliding) { 
+                    player.vy = WALL_JUMP_VELOCITY_Y;
+                    player.vx_override = player.wallSlideDir * WALL_JUMP_VELOCITY_X; // Impulso X
+                    player.wallJumpTimer = WALL_JUMP_COOLDOWN; 
+                    player.isWallSliding = false;
+                }
+                break;
+            case 'startMoveLeft':
+                player.vx = -1; 
+                break;
+            case 'stopMoveLeft':
+                if (player.vx < 0) player.vx = 0;
+                break;
+            case 'startMoveRight':
+                player.vx = 1; 
+                break;
+            case 'stopMoveRight':
+                if (player.vx > 0) player.vx = 0;
+                break;
+            case 'dash': 
+                const now = Date.now();
+                if (now - player.lastDashTime > DASH_COOLDOWN_TIME * 1000 && !player.isDashing) {
+                    player.isDashing = true;
+                    player.dashTimer = DASH_DURATION;
+                    player.lastDashTime = now;
+                    player.dashDirection = (player.vx !== 0) ? player.vx : 1;
+                    
+                    socket.emit('dashEffect', { playerId: player.id });
+                }
+                break;
+        }
+    });
+
+    socket.on('disconnect', () => {
+        console.log('Jugador desconectado:', socket.id);
+        delete players[socket.id];
+    });
+
+    socket.on('requestRestartGame', () => {
+        console.log("Reiniciando juego por solicitud del cliente.");
+        resetGame(); 
+    });
+});
+
+
+// Bucle de sincronización del servidor
+let lastUpdateTime = Date.now();
+setInterval(() => {
+    const now = Date.now();
+    const deltaTime = (now - lastUpdateTime) / 1000; 
+
+    // 1. Mover Obstáculos
+    for (const obs of currentObstacles) {
+        if (obs.isVertical) {
+            obs.y += (obs.speed * obs.dir) * deltaTime;
+            if (obs.y > obs.max) { obs.y = obs.max; obs.dir = -1; }
+            if (obs.y < obs.min) { obs.y = obs.min; obs.dir = 1; }
+        } else {
+            obs.x += (obs.speed * obs.dir) * deltaTime;
+            if (obs.x > obs.max) { obs.x = obs.max; obs.dir = -1; }
+            if (obs.x < obs.min) { obs.x = obs.min; obs.dir = 1; }
+        }
+    }
+
+    // 2. Lógica de Jugadores
+    for (const id in players) {
+        const player = players[id];
+        
+        // A. Manejar Stun Timer
+        if (player.stunTimer > 0) {
+            player.stunTimer -= deltaTime;
+            player.vx = 0; // Detener movimiento
+            player.vy += GRAVITY * deltaTime;
+            player.y += player.vy * deltaTime;
+            player.onGround = false;
+            for (const platform of currentPlatforms) {
+                 if (checkCollision(player, platform) && player.vy > 0 && player.y + player.height > platform.y && player.y < platform.y) {
+                    player.y = platform.y - player.height; 
+                    player.vy = 0; 
+                    player.onGround = true;
+                 }
+            }
+            continue; 
+        }
+
+        // B. Timers (Boost, Dash, Wall Jump)
+        if (player.boostTimer > 0) player.boostTimer -= deltaTime;
+        if (player.wallJumpTimer > 0) player.wallJumpTimer -= deltaTime;
+
+        // C. Física Horizontal (X) - REFACTORIZADA
+        let desired_vx = 0;
+        let currentSpeed = (player.boostTimer > 0) ? HORIZONTAL_SPEED * BOOST_MULTIPLIER : HORIZONTAL_SPEED;
+        
+        if (player.isDashing) {
+            player.dashTimer -= deltaTime;
+            desired_vx = player.dashDirection * DASH_SPEED;
+            if (player.dashTimer <= 0) {
+                player.isDashing = false;
+            }
+        } else if (player.vx_override) { 
+            desired_vx = player.vx_override;
+            if (player.wallJumpTimer <= 0) {
+                player.vx_override = 0;
+            }
+        } else {
+            desired_vx = player.vx * currentSpeed;
+        }
+
+        player.x += desired_vx * deltaTime;
+
+        // D. Colisión Horizontal y Deslizamiento (REFACTORIZADO)
+        player.isWallSliding = false; 
+        if (player.wallJumpTimer <= 0) { 
+            for (const wall of currentWalls) {
+                if (checkCollision(player, wall)) {
+                    // Colisionó... ¿por qué lado?
+                    if (desired_vx > 0) { // Moviéndose a la derecha
+                        player.x = wall.x - player.width;
+                        // ¡CORRECCIÓN! Solo desliza si cae Y presiona contra el muro
+                        if (!player.onGround && player.vy > 0 && player.vx === 1) { 
+                            player.isWallSliding = true;
+                            player.wallSlideDir = -1; // Saltar a la izquierda
+                        }
+                    } else if (desired_vx < 0) { // Moviéndose a la izquierda
+                        player.x = wall.x + wall.width;
+                        // ¡CORRECCIÓN!
+                        if (!player.onGround && player.vy > 0 && player.vx === -1) { 
+                            player.isWallSliding = true;
+                            player.wallSlideDir = 1; // Saltar a la derecha
+                        }
+                    }
+                }
+            }
+        }
+
+
+        // E. Física Vertical (Y)
+        player.vy += GRAVITY * deltaTime;
+        if (player.isWallSliding) {
+            if (player.vy > WALL_SLIDE_SPEED) {
+                player.vy = WALL_SLIDE_SPEED; 
+            }
+        }
+        player.y += player.vy * deltaTime;
+        player.onGround = false;
+
+        // F. Colisiones Verticales (¡CORRECCIÓN! Muros y Plataformas)
+        const collidables = [...currentPlatforms, ...currentWalls]; 
+        for (const platform of collidables) { 
+            if (checkCollision(player, platform)) {
+                // Colisión desde arriba (aterrizar)
+                // (Comprobación de 'pre-colisión' para evitar hundirse)
+                if (player.vy > 0 && (player.y + player.height - player.vy * deltaTime) <= platform.y) {
+                    player.y = platform.y - player.height; 
+                    player.vy = 0; 
+                    player.onGround = true;
+                    // Solo actualiza el checkpoint si es una plataforma, no un muro
+                    if (currentPlatforms.includes(platform)) {
+                        player.lastSafePlatform.x = platform.x + (platform.width / 2) - (player.width / 2);
+                        player.lastSafePlatform.y = platform.y - player.height;
+                    }
+                }
+                // Colisión desde abajo (golpear la cabeza)
+                else if (player.vy < 0 && (player.y - player.vy * deltaTime) >= platform.y + platform.height) {
+                    player.y = platform.y + platform.height;
+                    player.vy = 0; // Detener el salto
+                }
+            }
+        }
+        
+        // G. Colisiones con Zonas de Boost y Obstáculos
+        if (!player.isDashing) { 
+            for (const zone of currentBoostZones) {
+                if (checkCollision(player, zone)) player.boostTimer = BOOST_DURATION;
+            }
+        }
+        for (const obs of currentObstacles) {
+            if (checkCollision(player, obs)) player.stunTimer = STUN_DURATION;
+        }
+
+        // H. Límites del Mundo
+        if (player.x < 0) player.x = 0;
+        if (player.x + player.width > GAME_WORLD_WIDTH) player.x = GAME_WORLD_WIDTH - player.width;
+
+        // I. Victoria
+        if (player.score === 0 && checkCollision(player, goalFlag)) {
+            player.score = 1; 
+            io.sockets.emit('gameOver', { winnerId: player.id, color: player.color });
+            setTimeout(() => resetGame(), 5000); 
+        }
+        
+        // J. Muerte
+        if (player.y > DEATH_Y) {
+            resetPlayer(player, true); 
+        }
+    }
+    
+    // 3. Enviar estado
+    io.sockets.emit('gameState', { players: players });
+    io.sockets.emit('obstaclesUpdate', currentObstacles);
+
+    lastUpdateTime = now;
+}, 1000 / 60); 
+
+server.listen(PORT, () => console.log(`Servidor ejecutándose en http://localhost:${PORT}`));
