@@ -19,7 +19,9 @@ const GAME_WORLD_HEIGHT = 800;
 let currentPlatforms = []; 
 let currentBoostZones = [];
 let currentObstacles = []; 
-let currentWalls = []; // ¡NUEVO!
+let currentWalls = []; 
+let currentLadders = [];
+let currentPortals = [];
 let currentGoalFlag = {}; 
 let players = {};
 let gameRunning = true; 
@@ -44,14 +46,17 @@ gameContainer.appendChild(restartButton);
 // --- Manejo de la Conexión y Datos ---
 
 socket.on('connect', () => {
-    statusDiv.textContent = `Conectado. ID: ${socket.id}. Usa ESPACIO, A, D / Flechas para moverte. SHIFT para Dash.`;
+    // 📢 ¡INSTRUCCIÓN ACTUALIZADA! 📢
+    statusDiv.textContent = `Conectado. ID: ${socket.id}. Usa ESPACIO/W (Saltar/Subir), A/D (Mover), S (Bajar), SHIFT (Dash), J (Correr).`;
 });
 
 socket.on('levelData', (data) => {
     currentPlatforms = data.platforms;
     currentBoostZones = data.boostZones;
     currentObstacles = data.obstacles; 
-    currentWalls = data.walls || []; // ¡NUEVO!
+    currentWalls = data.walls || [];
+    currentLadders = data.ladders || []; 
+    currentPortals = data.portals || []; 
     currentGoalFlag = data.goalFlag;
     levelNameDiv.textContent = `Nivel: ${data.levelName}`;
     gameRunning = true; 
@@ -94,18 +99,19 @@ socket.on('dashEffect', (data) => {
     // Efecto visual
 });
 
+socket.on('portalEffect', (data) => {
+    // Efecto visual
+});
 
-// --- Lógica de Dibujo y Cámara ---
+// --- Lógica de Dibujo y Cámara (sin cambios) ---
 
 function updateCamera(player) {
-    // --- Cámara Horizontal (X) ---
     let targetX = player.x - CANVAS_WIDTH / 2;
     if (targetX < 0) targetX = 0;
     const maxCameraX = GAME_WORLD_WIDTH - CANVAS_WIDTH;
     if (targetX > maxCameraX) targetX = maxCameraX;
     cameraX = targetX;
 
-    // --- Cámara Vertical (Y) ---
     let targetY = player.y - CANVAS_HEIGHT / 2;
     if (targetY < 0) targetY = 0;
     const maxCameraY = GAME_WORLD_HEIGHT - CANVAS_HEIGHT;
@@ -121,7 +127,6 @@ function drawPlayer(player) {
     ctx.fillStyle = player.color;
     ctx.fillRect(drawX, drawY, player.width, player.height);
     
-    // Efecto visual de Stun
     if (player.stunTimer > 0) {
         ctx.fillStyle = 'rgba(255, 255, 0, 0.7)'; 
         ctx.fillRect(drawX, drawY - 10, player.width, 5); 
@@ -130,10 +135,9 @@ function drawPlayer(player) {
         ctx.fillText('STUN!', drawX, drawY - 15);
     }
 
-    // ¡NUEVO! Efecto visual de Wall Slide
     if (player.isWallSliding) {
         ctx.font = '12px sans-serif';
-        ctx.fillStyle = '#3498db'; // Azul
+        ctx.fillStyle = '#3498db';
         ctx.fillText('SLIDE', drawX, drawY - 5);
     }
     
@@ -150,21 +154,68 @@ function drawPlatforms() {
         const drawX = p.x - cameraX;
         const drawY = p.y - cameraY; 
         if (drawX + p.width > 0 && drawX < CANVAS_WIDTH && drawY + p.height > 0 && drawY < CANVAS_HEIGHT) {
-            ctx.fillStyle = p.color;
+            ctx.fillStyle = '#e67e22'; 
             ctx.fillRect(drawX, drawY, p.width, p.height);
         }
     });
 }
 
-// ¡NUEVO! Función para dibujar muros
 function drawWalls() {
     if (currentWalls.length === 0) return; 
     currentWalls.forEach(wall => { 
         const drawX = wall.x - cameraX;
         const drawY = wall.y - cameraY; 
         if (drawX + wall.width > 0 && drawX < CANVAS_WIDTH && drawY + wall.height > 0 && drawY < CANVAS_HEIGHT) {
-            ctx.fillStyle = wall.color;
+            ctx.fillStyle = '#7f8c8d'; 
             ctx.fillRect(drawX, drawY, wall.width, wall.height);
+        }
+    });
+}
+
+function drawLadders() {
+    if (currentLadders.length === 0) return; 
+    currentLadders.forEach(ladder => { 
+        const drawX = ladder.x - cameraX;
+        const drawY = ladder.y - cameraY; 
+        if (drawX + ladder.width > 0 && drawX < CANVAS_WIDTH && drawY + ladder.height > 0 && drawY < CANVAS_HEIGHT) {
+            ctx.fillStyle = ladder.color || '#9b59b6';
+            ctx.globalAlpha = 0.4; 
+            ctx.fillRect(drawX, drawY, ladder.width, ladder.height);
+            ctx.globalAlpha = 1.0; 
+            
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 1;
+            const stepHeight = 20; 
+            for (let y = drawY + stepHeight; y < drawY + ladder.height; y += stepHeight) {
+                ctx.beginPath();
+                ctx.moveTo(drawX, y);
+                ctx.lineTo(drawX + ladder.width, y);
+                ctx.stroke();
+            }
+        }
+    });
+}
+
+function drawPortals() {
+    if (currentPortals.length === 0) return; 
+    currentPortals.forEach(p => { 
+        const drawX = p.x - cameraX;
+        const drawY = p.y - cameraY; 
+        
+        if (drawX + p.width > 0 && drawX < CANVAS_WIDTH && drawY + p.height > 0 && drawY < CANVAS_HEIGHT) {
+            ctx.fillStyle = p.color; 
+            ctx.globalAlpha = 0.8; 
+            ctx.fillRect(drawX, drawY, p.width, p.height);
+            ctx.globalAlpha = 1.0; 
+            
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(drawX, drawY, p.width, p.height);
+
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`P${p.id}`, drawX + p.width / 2, drawY + p.height / 2 + 5);
         }
     });
 }
@@ -211,14 +262,13 @@ function drawFlag() {
     }
 }
 
-// --- Actualización de la UI (Dash Cooldown) ---
+// --- Actualización de la UI (Dash Cooldown) (sin cambios) ---
 function updateUI(localPlayer) {
     if (!localPlayer) {
         dashStatusDiv.textContent = 'Dash: (Conectando...)';
         return;
     }
     
-    // Mostrar estado de Stun (prioridad alta)
     if (localPlayer.stunTimer > 0) {
         dashStatusDiv.textContent = `¡ATURDIDO! (${localPlayer.stunTimer.toFixed(1)}s)`;
         dashStatusDiv.className = 'cooldown';
@@ -250,7 +300,9 @@ function gameLoop() {
     }
 
     drawPlatforms();
-    drawWalls(); // ¡NUEVO!
+    drawWalls(); 
+    drawLadders();
+    drawPortals();
     drawBoostZones();
     drawObstacles(); 
     drawFlag();
@@ -265,12 +317,24 @@ function gameLoop() {
 gameLoop();
 
 
-// --- Manejo de la Entrada del Jugador ---
+// --- Manejo de la Entrada del Jugador (Usando J y Prevención) ---
 
 document.addEventListener('keydown', (e) => {
+    
+    // Lista de todas las teclas que usa el juego
+    // 💥 ¡MODIFICADO: 'Alt' cambia a 'J'! 💥
+    const gameKeys = [' ', 'ArrowUp', 'w', 'ArrowLeft', 'a', 'ArrowRight', 'd', 'ArrowDown', 's', 'Shift', 'j'];
+    
+    // Previene la acción del navegador
+    if (gameKeys.includes(e.key) || gameKeys.includes(e.key.toLowerCase())) {
+        e.preventDefault();
+    }
+
+
     const localPlayer = players[socket.id];
+    // Se ajustó la verificación para usar 'j'
     if (!gameRunning || (localPlayer && localPlayer.stunTimer > 0)) {
-        if (e.key === 'Shift' || e.key === ' ' || e.key === 'ArrowUp') {
+        if (e.key === 'Shift' || e.key === ' ' || e.key === 'ArrowUp' || e.key.toLowerCase() === 'w' || e.key.toLowerCase() === 's' || e.key.toLowerCase() === 'j') { 
             keysPressed[e.key] = true; 
         }
         return;
@@ -280,14 +344,18 @@ document.addEventListener('keydown', (e) => {
     if (!keysPressed[e.key]) {
         keysPressed[e.key] = true;
 
-        if (e.key === ' ' || e.key === 'ArrowUp') {
+        if (e.key === ' ' || e.key === 'ArrowUp' || e.key.toLowerCase() === 'w') { 
             socket.emit('playerAction', { action: 'jump' });
         } else if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') {
             socket.emit('playerAction', { action: 'startMoveLeft' });
         } else if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') {
             socket.emit('playerAction', { action: 'startMoveRight' });
+        } else if (e.key === 'ArrowDown' || e.key.toLowerCase() === 's') { 
+            socket.emit('playerAction', { action: 'startMoveDown' }); 
         } else if (e.key === 'Shift') { 
             socket.emit('playerAction', { action: 'dash' });
+        } else if (e.key.toLowerCase() === 'j') { // 💥 ¡TECLA 'J' para Correr! 💥
+            socket.emit('playerAction', { action: 'startRun' });
         }
     }
 });
@@ -299,11 +367,23 @@ document.addEventListener('keyup', (e) => {
     if (!gameRunning || (localPlayer && localPlayer.stunTimer > 0)) {
         return; 
     }
+    
+    // DETENER MOVIMIENTO VERTICAL
+    if (e.key === ' ' || e.key === 'ArrowUp' || e.key.toLowerCase() === 'w') { 
+        socket.emit('playerAction', { action: 'stopJump' });
+    } else if (e.key === 'ArrowDown' || e.key.toLowerCase() === 's') { 
+        socket.emit('playerAction', { action: 'stopMoveDown' });
+    }
 
+    // DETENER MOVIMIENTO HORIZONTAL
     if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') {
         socket.emit('playerAction', { action: 'stopMoveLeft' });
     } else if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') {
-        // ¡ERROR CORREGIDO! Era socket.mit en lugar de socket.emit
         socket.emit('playerAction', { action: 'stopMoveRight' });
+    }
+    
+    // DETENER "CORRER"
+    if (e.key.toLowerCase() === 'j') { // 💥 ¡TECLA 'J' para dejar de Correr! 💥
+        socket.emit('playerAction', { action: 'stopRun' });
     }
 });
