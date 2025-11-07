@@ -1,76 +1,148 @@
+/* style.css */
+
 body {
     display: flex;
     justify-content: center;
     align-items: center;
     min-height: 100vh;
     margin: 0;
-    /* El background-color inicial se establece en game.js para el color del jugador */
+    
     background-color: #2c3e50; 
     font-family: sans-serif;
     color: #ecf0f1;
     text-align: center;
-    transition: background-color 0.5s ease; /* Transición suave para el cambio de color */
+    transition: background-color 0.5s ease;
 }
 
-#game-container {
-    background-color: #34495e;
-    padding: 20px;
-    border-radius: 10px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+#game-wrapper {
+    position: relative; /* Base para el menú de mandos (pop-up) */
+    border: 3px solid #f39c12; 
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+    display: block; 
+    
+    /* 💥 CORRECCIÓN: El fondo oscuro va en el wrapper */
+    background-color: #2c3e50; 
+    
+    /* 💥 CORRECCIÓN: Altura automática para contener la UI y el Canvas */
+    height: auto; 
+    
+    /* 💥 CORRECCIÓN: JS controla el ancho, CSS centra el texto */
+    text-align: center;
+}
+
+#game-canvas-container {
+    /* 💥 Fondo blanco para el Canvas */
+    background-color: white; 
+    display: block;
+    /* JS controlará el width/height de este contenedor */
 }
 
 #gameCanvas {
-    background-color: #ecf0f1; /* Fondo claro para el juego */
-    border: 3px solid #f1c40f;
-    display: block;
-    margin-top: 15px;
+    display: block; 
 }
+
+#ui-overlay {
+    /* 💥 CORRECCIÓN: Quitado 'position: absolute'. Ahora es un bloque normal. */
+    /* position: absolute; */ 
+    
+    /* 💥 CORRECCIÓN: El fondo ya está en el wrapper. */
+    /* background-color: rgba(44, 62, 80, 0.8); */
+    
+    /* 💥 CORRECCIÓN: El padding se aplica a los elementos internos */
+    padding: 10px 0; 
+    
+    display: flex; 
+    flex-direction: column; 
+    justify-content: center; 
+    align-items: center; 
+    
+    color: #ecf0f1; 
+    /* 💥 CORRECCIÓN: Ya no es un overlay, no necesita pointer-events */
+    /* pointer-events: none; */
+}
+
+/* 💥 CORRECCIÓN: Quitado (ya no es necesario) */
+/* #status, #levelName, button, #dashStatus, #gamepadMenu {
+    pointer-events: auto;
+    color: inherit; 
+} */
+
+/* --- Estilos específicos de los elementos --- */
 
 #status {
     font-size: 1.2em;
     font-weight: bold;
-    color: #3498db;
+    color: #3498db; 
     margin-bottom: 10px;
+    padding: 0 20px; /* Padding lateral */
 }
 
 #levelName {
     font-size: 1.1em;
     margin-bottom: 10px;
-    color: #f1c40f;
+    color: #f1c40f; 
+    padding: 0 20px; /* Padding lateral */
 }
 
 button {
     background-color: #2ecc71; 
-    color: white;
+    color: white; 
     padding: 10px 20px;
     border: none;
     border-radius: 5px;
     cursor: pointer;
     font-size: 1em;
-    margin-top: 15px;
+    margin-top: 15px; 
     transition: background-color 0.3s ease;
+    display: inline-block; /* Para que se centren con text-align: center */
 }
 
 button:hover {
     background-color: #27ae60;
 }
 
-/* --- Añadir al final de style.css --- */
-
+/* --- Dash Status --- */
 #dashStatus {
     font-size: 1.2em;
     font-weight: bold;
-    margin-top: 10px;
-    padding: 5px;
+    margin-top: 10px; 
+    padding: 5px 15px; 
     border-radius: 5px;
 }
 
 #dashStatus.ready {
-    color: #2ecc71; /* Verde */
-    background-color: rgba(255, 255, 255, 0.1);
+    color: #2ecc71;
+    background-color: rgba(255, 255, 255, 0.15); 
 }
 
 #dashStatus.cooldown {
-    color: #e74c3c; /* Rojo */
-    background-color: rgba(0, 0, 0, 0.1);
+    color: #e74c3c;
+    background-color: rgba(0, 0, 0, 0.15);
+}
+
+/* --- Menú de Mandos (Pop-up) --- */
+#gamepadMenu {
+    /* Este SÍ es un overlay, así que mantenemos el 'position: absolute' */
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 80%; 
+    max-width: 500px;
+    padding: 20px;
+    background-color: rgba(44, 62, 80, 0.95); 
+    border: 3px solid #f39c12;
+    z-index: 110; 
+    color: white;
+    text-align: left; 
+    display: none; 
+}
+
+#gamepadMenu h2, #gamepadMenu h3 {
+    text-align: center; 
+}
+
+#gamepadMenu button {
+    margin: 10px auto; 
+    display: block; /* Asegura que el margin auto funcione */
 }

@@ -7,10 +7,14 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="game-container">
-        <h1>Carrera de Plataformas 🏆</h1>
-        <p id="status">Conectando al servidor...</p>
-        <canvas id="gameCanvas" width="800" height="400"></canvas>
+    <div id="game-wrapper">
+        
+        <div id="ui-overlay">
+            </div>
+        
+        <div id="game-canvas-container">
+            <canvas id="gameCanvas" width="800" height="400"></canvas>
+        </div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
