@@ -129,13 +129,14 @@ function updateCanvasDimensions(playerCount) {
 
     // Ajustar el tamaño del game-wrapper y game-canvas-container
     gameWrapper.style.width = `${CANVAS_WIDTH}px`;
-    gameWrapper.style.height = `${CANVAS_HEIGHT}px`;
+    // 💥 CORRECCIÓN: Dejar que la altura del wrapper se ajuste automáticamente
+    // gameWrapper.style.height = `${CANVAS_HEIGHT}px`; 
     
     gameCanvasContainer.style.width = `${CANVAS_WIDTH}px`;
     gameCanvasContainer.style.height = `${CANVAS_HEIGHT}px`;
 }
 
-// --- Funciones de Menú de Mandos (Sin Cambios) ---
+// --- Funciones de Menú de Mandos ---
 function toggleGamepadMenu() {
     showGamepadMenu = !showGamepadMenu;
     if (showGamepadMenu) {
@@ -182,7 +183,6 @@ function buildGamepadMenu() {
         menuContainer.appendChild(addPlayerButton);
     }
     
-    // ... (Lógica de listado de jugadores locales - Código omitido por brevedad) ...
     const localPlayersDiv = document.createElement('div');
     localPlayersDiv.innerHTML = '<h3 style="color: #f39c12;">Jugadores Locales:</h3>';
     
@@ -283,7 +283,6 @@ function buildGamepadMenu() {
         availableGamepadsDiv.innerHTML += '<p style="color: #ccc;">**No se detectan mandos.** Pulsa **START** o cualquier botón en tu mando para que el navegador lo detecte.</p>';
     }
     
-    // Aseguramos que el texto del botón se actualice
     gamepadButton.textContent = `Asignar Mandos (${Object.keys(gamepadAssignments).length} Asignados)`;
     
     menuContainer.appendChild(availableGamepadsDiv);
@@ -296,7 +295,8 @@ function buildGamepadMenu() {
     closeButton.onclick = toggleGamepadMenu;
     menuContainer.appendChild(closeButton);
 }
-// --- Lógica de Manejo de Input del Mando (Gamepad) (Sin Cambios) ---
+// --- Lógica de Manejo de Input del Mando (Gamepad) ---
+
 function handleGamepadInput() {
     if (showGamepadMenu) return; 
     
@@ -310,7 +310,8 @@ function handleGamepadInput() {
         
         if (!gamepad || !player || player.stunTimer > 0) continue;
 
-        // --- 1. MOVIMIENTO HORIZONTAL ---
+        // --- 1. MOVIMIENTO HORIZONTAL (Stick Izquierdo X O D-Pad) ---
+        
         const x_axis = gamepad.axes[0] || 0; 
         const dpad_left = gamepad.buttons[14] && gamepad.buttons[14].pressed; 
         const dpad_right = gamepad.buttons[15] && gamepad.buttons[15].pressed; 
@@ -326,7 +327,8 @@ function handleGamepadInput() {
              socket.emit('playerAction', { playerId: playerId, action: 'stopMoveLeft' });
         }
         
-        // --- 2. SALTO (A [0]) ---
+        // --- 2. SALTO (A [0] - Salto Variable) ---
+        
         const aButtonPressed = gamepad.buttons[0] && gamepad.buttons[0].pressed; 
 
         if (aButtonPressed) {
@@ -355,7 +357,8 @@ function handleGamepadInput() {
             player.isDashingButtonHeld = false;
         }
 
-        // --- 4. CORRER (X [3]) ---
+        // --- 4. CORRER (X [3] - Ajuste por Mapeo no Estándar) ---
+        // (Usamos el índice 3 porque reportaste que el 2 no funcionaba para X)
         const runButtonPressed = (gamepad.buttons[3] && gamepad.buttons[3].pressed); 
                                  
         if (runButtonPressed) { 
@@ -379,7 +382,7 @@ function handleGamepadInput() {
 }
 
 
-// --- Manejo de la Conexión y Datos (Sin Cambios) ---
+// --- Manejo de la Conexión y Datos ---
 
 socket.on('connect', () => {
     statusDiv.textContent = `Conectado. ID: ${socket.id}. Usa ESPACIO, A, D / Flechas para moverte. SHIFT para Dash.`;
@@ -470,7 +473,7 @@ socket.on('dashEffect', (data) => {
 });
 
 
-// --- Lógica de Dibujo y Cámara (Sin Cambios) ---
+// --- Lógica de Dibujo y Cámara ---
 function updateCamera(player) {
     
     // Cámara Horizontal (X) - Usando VIEW_WIDTH
@@ -489,7 +492,7 @@ function updateCamera(player) {
 }
 
 
-// *** FUNCIÓN MODIFICADA PARA RESALTAR JUGADORES LOCALES (Sin Cambios) ***
+// *** FUNCIÓN MODIFICADA PARA RESALTAR JUGADORES LOCALES ***
 function drawPlayer(player) {
     const drawX = player.x - cameraX;
     const drawY = player.y - cameraY; 
@@ -521,7 +524,7 @@ function drawPlayer(player) {
     }
 }
 
-// Las funciones drawPlatforms, drawWalls, drawBoostZones, etc. (Código omitido por brevedad)
+// Las funciones de dibujo ahora usan VIEW_WIDTH y VIEW_HEIGHT
 function drawPlatforms() {
     if (currentPlatforms.length === 0) return; 
     currentPlatforms.forEach(p => { 
@@ -673,6 +676,7 @@ function gameLoop() {
         // Lógica de respaldo
         updateCamera({ x: GAME_WORLD_WIDTH / 2, y: GAME_WORLD_HEIGHT / 2 }); 
         drawPlatforms();
+        // ... (resto de funciones de dibujo)
         drawWalls(); 
         drawLadders(); 
         drawPortals();

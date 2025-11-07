@@ -58,7 +58,7 @@ let currentPortals = [];
 let localPlayersMap = {}; 
 // -----------------------------------------------------------------------------
 
-// --- Definición de Niveles (Sin cambios) ---
+// --- Definición de Niveles ---
 const LEVELS = [
     {
         name: "La Gran Escalada (con Muros)",
@@ -261,7 +261,7 @@ function resetGame(newLevel = true) {
         ladders: currentLadders,
         portals: currentPortals,
         goalFlag: goalFlag,
-        levelName: currentLevel.name
+        levelName: LEVELS[currentLevelIndex].name
     });
     io.sockets.emit('gameState', { players: players }); 
 }
@@ -389,7 +389,7 @@ io.on('connection', (socket) => {
 
         resetPlayer(players[playerId]);
         
-        // Notificar al cliente específico que se creó el nuevo jugador
+        // Notificar al cliente específico que un nuevo jugador fue creado
         io.to(socket.id).emit('localPlayerCreated', { playerId: playerId });
         console.log(`Jugador local adicional creado: ${playerId}`);
     });
@@ -611,7 +611,7 @@ setInterval(() => {
                     player.wallJumpTimer = 0;
                 }
 
-                // 3. 💥 ¡NUEVO! CANCELAR DASH AL COLISIONAR CON MURO 💥
+                // 3. 💥 CANCELAR DASH AL COLISIONAR CON MURO 💥
                 if (player.isDashing) {
                     player.isDashing = false;
                     player.dashTimer = 0; 
@@ -633,6 +633,7 @@ setInterval(() => {
                 }
             }
         }
+
 
         // E. Física Vertical (Y)
         if (player.isWallSliding) {
