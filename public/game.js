@@ -1,12 +1,12 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// 💥 CORRECCIÓN: Referencias a los nuevos contenedores.
+// Referencias a los contenedores
 const gameWrapper = document.getElementById('game-wrapper'); 
 const uiOverlay = document.getElementById('ui-overlay');     
 const gameCanvasContainer = document.getElementById('game-canvas-container'); 
 
-// 💥 CORRECCIÓN: Creamos TODOS los elementos de UI desde cero.
+// Creación de elementos de UI
 const statusDiv = document.createElement('p');
 statusDiv.id = 'status';
 statusDiv.textContent = 'Conectando al servidor...';
@@ -28,7 +28,7 @@ restartButton.onclick = () => {
     statusDiv.textContent = `Petición de reinicio enviada...`;
 };
 
-// --- Botón de Mandos (Ya no está duplicado) ---
+// --- Botón de Mandos ---
 const gamepadButton = document.createElement('button');
 gamepadButton.id = 'gamepadButton';
 gamepadButton.textContent = 'Asignar Mandos (0 Asignados)';
@@ -48,23 +48,21 @@ menuContainer.style.zIndex = '1000';
 
 gamepadButton.onclick = toggleGamepadMenu;
 
-// 💥 ADJUNTAR: Solo una vez, al uiOverlay.
+// Adjuntar elementos de UI al overlay
 uiOverlay.appendChild(statusDiv);
 uiOverlay.appendChild(levelNameDiv);
 uiOverlay.appendChild(dashStatusDiv);
 uiOverlay.appendChild(gamepadButton);
 uiOverlay.appendChild(restartButton);
 
-// El menuContainer, al BODY.
+// Adjuntar el menú pop-up al body
 document.body.appendChild(menuContainer);
 
 
 // --- Variables de Juego del cliente ---
-// Base
 const BASE_WIDTH = 800;
 const BASE_HEIGHT = 400;
 
-// Dinámicas (Inicializadas con la base)
 let CANVAS_WIDTH = BASE_WIDTH; 
 let CANVAS_HEIGHT = BASE_HEIGHT;
 let VIEW_WIDTH = BASE_WIDTH;    
@@ -91,8 +89,7 @@ const socket = io();
 let cameraX = 0; 
 let cameraY = 0; 
 
-// --- ¡VARIABLES PARA MANDO! ---
-let gamepadAssignments = {}; // { gamepadIndex: playerId }
+let gamepadAssignments = {}; 
 let showGamepadMenu = false; 
 
 // --- Ajusta el tamaño del canvas y de la vista ---
@@ -123,14 +120,10 @@ function updateCanvasDimensions(playerCount) {
         VIEW_HEIGHT = CANVAS_HEIGHT;
     }
 
-    // Aplicar los cambios al elemento HTML
     canvas.width = CANVAS_WIDTH;
     canvas.height = CANVAS_HEIGHT;
 
-    // Ajustar el tamaño del game-wrapper y game-canvas-container
     gameWrapper.style.width = `${CANVAS_WIDTH}px`;
-    // 💥 CORRECCIÓN: Dejar que la altura del wrapper se ajuste automáticamente
-    // gameWrapper.style.height = `${CANVAS_HEIGHT}px`; 
     
     gameCanvasContainer.style.width = `${CANVAS_WIDTH}px`;
     gameCanvasContainer.style.height = `${CANVAS_HEIGHT}px`;
@@ -170,7 +163,7 @@ function buildGamepadMenu() {
     h2.style.color = 'white';
     menuContainer.appendChild(h2);
     
-    // Añadir jugador local button
+    // Botón para añadir jugadores locales (hasta 4)
     if (localPlayerIds.length < MAX_LOCAL_PLAYERS) {
         const addPlayerButton = document.createElement('button');
         addPlayerButton.textContent = `Añadir Jugador Local ${localPlayerIds.length + 1}`;
@@ -256,7 +249,7 @@ function buildGamepadMenu() {
                 gStatusText += `ASIGNADO a ${players[assignedPlayerId]?.color || assignedPlayerId.substring(0, 7)}`;
                 gDiv.style.opacity = '0.7';
             } else {
-                gStatusText += 'DISPONIBLE';
+                gStatusText += 'DISPONIBLE (Pulsa START para asignar)';
                 
                 currentLocalPlayers.forEach(playerId => {
                     if (!Object.values(gamepadAssignments).includes(playerId)) {
@@ -297,89 +290,127 @@ function buildGamepadMenu() {
 }
 // --- Lógica de Manejo de Input del Mando (Gamepad) ---
 
+// 💥💥 FUNCIÓN handleGamepadInput MODIFICADA 💥💥
 function handleGamepadInput() {
-    if (showGamepadMenu) return; 
+    if (showGamepadMenu) return; // No procesar inputs si el menú está abierto
     
     const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
 
-    for (const gIdx in gamepadAssignments) {
-        const gamepadIndex = parseInt(gIdx);
-        const playerId = gamepadAssignments[gamepadIndex];
-        const gamepad = gamepads[gamepadIndex];
-        const player = players[playerId];
-        
-        if (!gamepad || !player || player.stunTimer > 0) continue;
+    // Iterar sobre TODOS los slots de mando (0-3)
+    for (let i = 0; i < gamepads.length; i++) {
+        const gamepad = gamepads[i];
+        if (!gamepad) continue; // Si no hay mando en este slot, saltar
 
-        // --- 1. MOVIMIENTO HORIZONTAL (Stick Izquierdo X O D-Pad) ---
-        
-        const x_axis = gamepad.axes[0] || 0; 
-        const dpad_left = gamepad.buttons[14] && gamepad.buttons[14].pressed; 
-        const dpad_right = gamepad.buttons[15] && gamepad.buttons[15].pressed; 
-        
-        if (x_axis > 0.1 || dpad_right) {
-            socket.emit('playerAction', { playerId: playerId, action: 'startMoveRight' });
-            socket.emit('playerAction', { playerId: playerId, action: 'stopMoveLeft' });
-        } else if (x_axis < -0.1 || dpad_left) {
-            socket.emit('playerAction', { playerId: playerId, action: 'startMoveLeft' });
-            socket.emit('playerAction', { playerId: playerId, action: 'stopMoveRight' });
-        } else {
-             socket.emit('playerAction', { playerId: playerId, action: 'stopMoveRight' });
-             socket.emit('playerAction', { playerId: playerId, action: 'stopMoveLeft' });
-        }
-        
-        // --- 2. SALTO (A [0] - Salto Variable) ---
-        
-        const aButtonPressed = gamepad.buttons[0] && gamepad.buttons[0].pressed; 
+        const playerId = gamepadAssignments[gamepad.index];
 
-        if (aButtonPressed) {
-            if (!player.isJumpingHeld) {
-                socket.emit('playerAction', { playerId: playerId, action: 'jump' });
-                player.isJumpingHeld = true; 
+        // -----------------------------------------------------------------
+        // CASO 1: Mando ASIGNADO (Procesar inputs del juego)
+        // -----------------------------------------------------------------
+        if (playerId) {
+            const player = players[playerId];
+            if (!player || player.stunTimer > 0) continue;
+
+            // --- 1. MOVIMIENTO HORIZONTAL (Stick Izquierdo X O D-Pad) ---
+            const x_axis = gamepad.axes[0] || 0; 
+            const dpad_left = gamepad.buttons[14] && gamepad.buttons[14].pressed; 
+            const dpad_right = gamepad.buttons[15] && gamepad.buttons[15].pressed; 
+            
+            if (x_axis > 0.1 || dpad_right) {
+                socket.emit('playerAction', { playerId: playerId, action: 'startMoveRight' });
+                socket.emit('playerAction', { playerId: playerId, action: 'stopMoveLeft' });
+            } else if (x_axis < -0.1 || dpad_left) {
+                socket.emit('playerAction', { playerId: playerId, action: 'startMoveLeft' });
+                socket.emit('playerAction', { playerId: playerId, action: 'stopMoveRight' });
+            } else {
+                 socket.emit('playerAction', { playerId: playerId, action: 'stopMoveRight' });
+                 socket.emit('playerAction', { playerId: playerId, action: 'stopMoveLeft' });
             }
-        } else {
-             if (player.isJumpingHeld) {
-                 socket.emit('playerAction', { playerId: playerId, action: 'stopJump' });
-                 player.isJumpingHeld = false;
-             }
-        }
-
-        // --- 3. DASH (B [1] O RT [Eje 5]) ---
-        const rt_axis = gamepad.axes[5] || 0;
-        const dashButtonPressed = (gamepad.buttons[1] && gamepad.buttons[1].pressed) || 
-                                  (rt_axis > 0.5); 
-                                  
-        if (dashButtonPressed) { 
-            if (!player.isDashingButtonHeld) {
-                socket.emit('playerAction', { playerId: playerId, action: 'dash' });
-                player.isDashingButtonHeld = true; 
+            
+            // --- 2. SALTO (A [0] - Salto Variable) ---
+            const aButtonPressed = gamepad.buttons[0] && gamepad.buttons[0].pressed; 
+            if (aButtonPressed) {
+                if (!player.isJumpingHeld) {
+                    socket.emit('playerAction', { playerId: playerId, action: 'jump' });
+                    player.isJumpingHeld = true; 
+                }
+            } else {
+                 if (player.isJumpingHeld) {
+                     socket.emit('playerAction', { playerId: playerId, action: 'stopJump' });
+                     player.isJumpingHeld = false;
+                 }
             }
-        } else {
-            player.isDashingButtonHeld = false;
-        }
 
-        // --- 4. CORRER (X [3] - Ajuste por Mapeo no Estándar) ---
-        // (Usamos el índice 3 porque reportaste que el 2 no funcionaba para X)
-        const runButtonPressed = (gamepad.buttons[3] && gamepad.buttons[3].pressed); 
-                                 
-        if (runButtonPressed) { 
-             socket.emit('playerAction', { playerId: playerId, action: 'startRun' });
-        } else {
-             socket.emit('playerAction', { playerId: playerId, action: 'stopRun' });
-        }
-
-        // --- 5. MENÚ ---
-        const menuButtonPressed = (gamepad.buttons[9] && gamepad.buttons[9].pressed);
-        
-        if (menuButtonPressed) {
-             if (!player.isMenuButtonHeld) {
-                toggleGamepadMenu();
-                player.isMenuButtonHeld = true;
+            // --- 3. DASH (B [1] O RT [Eje 5 o 4]) ---
+            // 💥 CORRECCIÓN DInput: Añadido chequeo de Eje 4 (axes[4])
+            const rt_axis_xinput = gamepad.axes[5] || 0; // XInput (Xbox)
+            const rt_axis_dinput = gamepad.axes[4] || 0; // DInput (Otros)
+            const dashButtonPressed = (gamepad.buttons[1] && gamepad.buttons[1].pressed) || // Botón B
+                                      (rt_axis_xinput > 0.5) ||
+                                      (rt_axis_dinput > 0.5); 
+                                      
+            if (dashButtonPressed) { 
+                if (!player.isDashingButtonHeld) {
+                    socket.emit('playerAction', { playerId: playerId, action: 'dash' });
+                    player.isDashingButtonHeld = true; 
+                }
+            } else {
+                player.isDashingButtonHeld = false;
             }
-        } else {
-            player.isMenuButtonHeld = false;
+
+            // --- 4. CORRER (X [3]) ---
+            const runButtonPressed = (gamepad.buttons[3] && gamepad.buttons[3].pressed); 
+            if (runButtonPressed) { 
+                 socket.emit('playerAction', { playerId: playerId, action: 'startRun' });
+            } else {
+                 socket.emit('playerAction', { playerId: playerId, action: 'stopRun' });
+            }
+
+            // --- 5. MENÚ (START [9]) ---
+            const menuButtonPressed = (gamepad.buttons[9] && gamepad.buttons[9].pressed);
+            if (menuButtonPressed) {
+                 if (!player.isMenuButtonHeld) {
+                    toggleGamepadMenu(); // Un mando asignado abre el menú
+                    player.isMenuButtonHeld = true;
+                }
+            } else {
+                player.isMenuButtonHeld = false;
+            }
+        } 
+        // -----------------------------------------------------------------
+        // CASO 2: Mando NO ASIGNADO (Escuchar 'Start' para auto-asignar)
+        // -----------------------------------------------------------------
+        else {
+            const menuButtonPressed = (gamepad.buttons[9] && gamepad.buttons[9].pressed);
+            const key = `Gamepad${gamepad.index}StartHeld`;
+
+            if (menuButtonPressed && !keysPressed[key]) {
+                keysPressed[key] = true;
+                
+                // Buscar el primer jugador local (localPlayerIds) que NO esté en gamepadAssignments
+                const assignedPlayerIds = Object.values(gamepadAssignments);
+                let nextFreePlayerId = null;
+
+                for (const localId of localPlayerIds) {
+                    if (!assignedPlayerIds.includes(localId)) {
+                        nextFreePlayerId = localId;
+                        break; // Encontrado el primer P1, P2, etc. libre
+                    }
+                }
+
+                if (nextFreePlayerId) {
+                    assignGamepad(gamepad.index, nextFreePlayerId);
+                    statusDiv.textContent = `✅ Mando ${gamepad.index} asignado a Jugador ${nextFreePlayerId.substring(0, 7)}`;
+                } else {
+                    // Si no hay jugadores libres (quizás solo hay 1 local y ya está asignado)
+                    statusDiv.textContent = `⚠️ Mando ${gamepad.index} detectado, pero no hay jugadores locales libres. Añade uno en el menú.`;
+                }
+            } else if (!menuButtonPressed) {
+                keysPressed[key] = false;
+            }
         }
     }
 }
+// 💥💥 FIN DE LA FUNCIÓN MODIFICADA 💥💥
 
 
 // --- Manejo de la Conexión y Datos ---
@@ -524,7 +555,7 @@ function drawPlayer(player) {
     }
 }
 
-// Las funciones de dibujo ahora usan VIEW_WIDTH y VIEW_HEIGHT
+// Las funciones de dibujo (Sin Cambios)
 function drawPlatforms() {
     if (currentPlatforms.length === 0) return; 
     currentPlatforms.forEach(p => { 
@@ -635,7 +666,7 @@ function drawFlag() {
 }
 
 
-// --- Actualización de la UI (Dash Cooldown) (Sin Cambios) ---
+// --- Actualización de la UI (Dash Cooldown) ---
 function updateUI(localPlayer) {
     if (!localPlayer) {
         dashStatusDiv.textContent = 'Dash: (Conectando...)';
@@ -676,7 +707,6 @@ function gameLoop() {
         // Lógica de respaldo
         updateCamera({ x: GAME_WORLD_WIDTH / 2, y: GAME_WORLD_HEIGHT / 2 }); 
         drawPlatforms();
-        // ... (resto de funciones de dibujo)
         drawWalls(); 
         drawLadders(); 
         drawPortals();
@@ -781,7 +811,7 @@ updateCanvasDimensions(1);
 gameLoop();
 
 
-// --- Manejo de la Entrada del Jugador (Teclado) (Sin Cambios) ---
+// --- Manejo de la Entrada del Jugador (Teclado) ---
 
 document.addEventListener('keydown', (e) => {
     const localPlayer = players[socket.id];
@@ -826,7 +856,7 @@ document.addEventListener('keyup', (e) => {
     }
 });
 
-// --- Manejo de la Detección de Mandos (Gamepad API Events) (Sin Cambios) ---
+// --- Manejo de la Detección de Mandos (Gamepad API Events) ---
 
 window.addEventListener("gamepadconnected", (e) => {
     statusDiv.textContent = `✅ Mando ${e.gamepad.index} (${e.gamepad.id.substring(0, 15)}...) detectado.`;
