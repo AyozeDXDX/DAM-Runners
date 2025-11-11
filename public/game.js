@@ -14,19 +14,16 @@ statusDiv.textContent = 'Conectando al servidor...';
 const levelNameDiv = document.createElement('div'); 
 levelNameDiv.id = 'levelName';
 
+// 💥 NUEVO: Puntuación de Equipos
+const teamScoreDiv = document.createElement('div');
+teamScoreDiv.id = 'teamScore';
+teamScoreDiv.innerHTML = '<span class="team-red">Rojo: 0</span> - <span class="team-blue">Azul: 0</span>';
+
 const dashStatusDiv = document.createElement('div');
 dashStatusDiv.id = 'dashStatus';
 
-// --- Botón de Reinicio ---
-const restartButton = document.createElement('button');
-restartButton.id = 'restartButton'; 
-restartButton.textContent = 'Reiniciar Ronda (Nivel Aleatorio)';
-restartButton.style.display = 'none'; 
-restartButton.onclick = () => {
-    socket.emit('requestRestartGame');
-    restartButton.style.display = 'none';
-    statusDiv.textContent = `Petición de reinicio enviada...`;
-};
+// 💥 ELIMINADO: Botón de Reinicio
+// const restartButton = document.createElement('button');
 
 // --- Botón de Mandos ---
 const gamepadButton = document.createElement('button');
@@ -48,14 +45,14 @@ menuContainer.style.zIndex = '1000';
 
 gamepadButton.onclick = toggleGamepadMenu;
 
-// Adjuntar elementos de UI al overlay
+// Adjuntar UI al Overlay
 uiOverlay.appendChild(statusDiv);
+uiOverlay.appendChild(teamScoreDiv); // ¡AÑADIDO!
 uiOverlay.appendChild(levelNameDiv);
 uiOverlay.appendChild(dashStatusDiv);
 uiOverlay.appendChild(gamepadButton);
-uiOverlay.appendChild(restartButton);
+// 💥 ELIMINADO: restartButton.appendChild
 
-// Adjuntar el menú pop-up al body
 document.body.appendChild(menuContainer);
 
 
@@ -69,7 +66,7 @@ let VIEW_WIDTH = BASE_WIDTH;
 let VIEW_HEIGHT = BASE_HEIGHT; 
 
 const MAX_LOCAL_PLAYERS = 4;
-const GAME_WORLD_WIDTH = 2500; 
+const GAME_WORLD_WIDTH = 3500; // Ampliado para el lobby
 const GAME_WORLD_HEIGHT = 800;
 
 let currentPlatforms = []; 
@@ -79,6 +76,8 @@ let currentWalls = [];
 let currentGoalFlag = {};
 let currentLadders = [];
 let currentPortals = [];
+let currentTeamZones = []; // ¡NUEVO!
+let currentModeZones = []; // ¡NUEVO!
 let players = {};
 let gameRunning = true; 
 const keysPressed = {}; 
@@ -124,6 +123,7 @@ function updateCanvasDimensions(playerCount) {
     canvas.height = CANVAS_HEIGHT;
 
     gameWrapper.style.width = `${CANVAS_WIDTH}px`;
+    gameWrapper.style.height = `auto`; 
     
     gameCanvasContainer.style.width = `${CANVAS_WIDTH}px`;
     gameCanvasContainer.style.height = `${CANVAS_HEIGHT}px`;
@@ -163,7 +163,6 @@ function buildGamepadMenu() {
     h2.style.color = 'white';
     menuContainer.appendChild(h2);
     
-    // Botón para añadir jugadores locales (hasta 4)
     if (localPlayerIds.length < MAX_LOCAL_PLAYERS) {
         const addPlayerButton = document.createElement('button');
         addPlayerButton.textContent = `Añadir Jugador Local ${localPlayerIds.length + 1}`;
@@ -228,7 +227,6 @@ function buildGamepadMenu() {
     
     menuContainer.appendChild(localPlayersDiv);
 
-    // Mapear mandos disponibles
     const availableGamepadsDiv = document.createElement('div');
     availableGamepadsDiv.innerHTML = '<h3 style="color: #f39c12;">Mandos Conectados:</h3>';
 
@@ -289,96 +287,141 @@ function buildGamepadMenu() {
     menuContainer.appendChild(closeButton);
 }
 // --- Lógica de Manejo de Input del Mando (Gamepad) ---
-
-// 💥💥 FUNCIÓN handleGamepadInput MODIFICADA 💥💥
 function handleGamepadInput() {
-    if (showGamepadMenu) return; // No procesar inputs si el menú está abierto
+    if (showGamepadMenu) return; 
     
     const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
 
-    // Iterar sobre TODOS los slots de mando (0-3)
     for (let i = 0; i < gamepads.length; i++) {
         const gamepad = gamepads[i];
-        if (!gamepad) continue; // Si no hay mando en este slot, saltar
+        if (!gamepad) continue; 
 
         const playerId = gamepadAssignments[gamepad.index];
 
-        // -----------------------------------------------------------------
-        // CASO 1: Mando ASIGNADO (Procesar inputs del juego)
-        // -----------------------------------------------------------------
+        // CASO 1: Mando ASIGNADO
         if (playerId) {
             const player = players[playerId];
             if (!player || player.stunTimer > 0) continue;
 
-            // --- 1. MOVIMIENTO HORIZONTAL (Stick Izquierdo X O D-Pad) ---
+            // --- 1. MOVIMIENTO HORIZONTAL ---
             const x_axis = gamepad.axes[0] || 0; 
             const dpad_left = gamepad.buttons[14] && gamepad.buttons[14].pressed; 
             const dpad_right = gamepad.buttons[15] && gamepad.buttons[15].pressed; 
             
+            const leftKey = `Gamepad${gamepad.index}Left`;
+            const rightKey = `Gamepad${gamepad.index}Right`;
+            
             if (x_axis > 0.1 || dpad_right) {
-                socket.emit('playerAction', { playerId: playerId, action: 'startMoveRight' });
-                socket.emit('playerAction', { playerId: playerId, action: 'stopMoveLeft' });
+                if (!keysPressed[rightKey]) {
+                    socket.emit('playerAction', { playerId: playerId, action: 'startMoveRight' });
+                    keysPressed[rightKey] = true;
+                }
+                if (keysPressed[leftKey]) { 
+                    socket.emit('playerAction', { playerId: playerId, action: 'stopMoveLeft' });
+                    keysPressed[leftKey] = false;
+                }
             } else if (x_axis < -0.1 || dpad_left) {
-                socket.emit('playerAction', { playerId: playerId, action: 'startMoveLeft' });
-                socket.emit('playerAction', { playerId: playerId, action: 'stopMoveRight' });
-            } else {
-                 socket.emit('playerAction', { playerId: playerId, action: 'stopMoveRight' });
-                 socket.emit('playerAction', { playerId: playerId, action: 'stopMoveLeft' });
+                if (!keysPressed[leftKey]) {
+                    socket.emit('playerAction', { playerId: playerId, action: 'startMoveLeft' });
+                    keysPressed[leftKey] = true;
+                }
+                if (keysPressed[rightKey]) { 
+                    socket.emit('playerAction', { playerId: playerId, action: 'stopMoveRight' });
+                    keysPressed[rightKey] = false;
+                }
+            } else { 
+                 if (keysPressed[leftKey]) {
+                    socket.emit('playerAction', { playerId: playerId, action: 'stopMoveLeft' });
+                    keysPressed[leftKey] = false;
+                 }
+                 if (keysPressed[rightKey]) {
+                    socket.emit('playerAction', { playerId: playerId, action: 'stopMoveRight' });
+                    keysPressed[rightKey] = false;
+                 }
             }
             
-            // --- 2. SALTO (A [0] - Salto Variable) ---
+            // --- 2. MOVIMIENTO VERTICAL (Salto/Escalera Arriba) ---
             const aButtonPressed = gamepad.buttons[0] && gamepad.buttons[0].pressed; 
-            if (aButtonPressed) {
-                if (!player.isJumpingHeld) {
+            const dpadUpPressed = gamepad.buttons[12] && gamepad.buttons[12].pressed;
+            const y_axis_up = (gamepad.axes[1] || 0) < -0.5; 
+            const jumpKey = `Gamepad${gamepad.index}Jump`; 
+
+            if (aButtonPressed || dpadUpPressed || y_axis_up) {
+                if (!keysPressed[jumpKey]) {
                     socket.emit('playerAction', { playerId: playerId, action: 'jump' });
-                    player.isJumpingHeld = true; 
+                    keysPressed[jumpKey] = true; 
                 }
             } else {
-                 if (player.isJumpingHeld) {
+                 if (keysPressed[jumpKey]) {
                      socket.emit('playerAction', { playerId: playerId, action: 'stopJump' });
-                     player.isJumpingHeld = false;
+                     keysPressed[jumpKey] = false;
                  }
             }
 
-            // --- 3. DASH (B [1] O RT [Eje 5 o 4]) ---
-            // 💥 CORRECCIÓN DInput: Añadido chequeo de Eje 4 (axes[4])
-            const rt_axis_xinput = gamepad.axes[5] || 0; // XInput (Xbox)
-            const rt_axis_dinput = gamepad.axes[4] || 0; // DInput (Otros)
-            const dashButtonPressed = (gamepad.buttons[1] && gamepad.buttons[1].pressed) || // Botón B
+            // --- 3. MOVIMIENTO VERTICAL (Escalera Abajo) ---
+            const dpadDownPressed = gamepad.buttons[13] && gamepad.buttons[13].pressed;
+            const y_axis_down = (gamepad.axes[1] || 0) > 0.5; 
+            const downKey = `Gamepad${gamepad.index}Down`; 
+
+            if (dpadDownPressed || y_axis_down) {
+                if (!keysPressed[downKey]) {
+                    socket.emit('playerAction', { playerId: playerId, action: 'startMoveDown' });
+                    keysPressed[downKey] = true; 
+                }
+            } else {
+                 if (keysPressed[downKey]) {
+                     socket.emit('playerAction', { playerId: playerId, action: 'stopMoveDown' });
+                     keysPressed[downKey] = false;
+                 }
+            }
+
+            // --- 4. DASH (B [1] O RT [Eje 5 o 4]) ---
+            const rt_axis_xinput = gamepad.axes[5] || 0; 
+            const rt_axis_dinput = gamepad.axes[4] || 0; 
+            const dashButtonPressed = (gamepad.buttons[1] && gamepad.buttons[1].pressed) || 
                                       (rt_axis_xinput > 0.5) ||
                                       (rt_axis_dinput > 0.5); 
+            const dashKey = `Gamepad${gamepad.index}Dash`;
                                       
             if (dashButtonPressed) { 
-                if (!player.isDashingButtonHeld) {
+                if (!keysPressed[dashKey]) {
                     socket.emit('playerAction', { playerId: playerId, action: 'dash' });
-                    player.isDashingButtonHeld = true; 
+                    keysPressed[dashKey] = true; 
                 }
             } else {
-                player.isDashingButtonHeld = false;
+                keysPressed[dashKey] = false;
             }
 
-            // --- 4. CORRER (X [3]) ---
+            // --- 5. CORRER (X [3]) ---
             const runButtonPressed = (gamepad.buttons[3] && gamepad.buttons[3].pressed); 
+            const runKey = `Gamepad${gamepad.index}Run`;
+                                 
             if (runButtonPressed) { 
-                 socket.emit('playerAction', { playerId: playerId, action: 'startRun' });
+                 if (!keysPressed[runKey]) {
+                     socket.emit('playerAction', { playerId: playerId, action: 'startRun' });
+                     keysPressed[runKey] = true;
+                 }
             } else {
-                 socket.emit('playerAction', { playerId: playerId, action: 'stopRun' });
+                 if (keysPressed[runKey]) {
+                     socket.emit('playerAction', { playerId: playerId, action: 'stopRun' });
+                     keysPressed[runKey] = false;
+                 }
             }
 
-            // --- 5. MENÚ (START [9]) ---
+            // --- 6. MENÚ (Start [9]) ---
             const menuButtonPressed = (gamepad.buttons[9] && gamepad.buttons[9].pressed);
+            const menuKey = `Gamepad${gamepad.index}Menu`;
+            
             if (menuButtonPressed) {
-                 if (!player.isMenuButtonHeld) {
-                    toggleGamepadMenu(); // Un mando asignado abre el menú
-                    player.isMenuButtonHeld = true;
+                 if (!keysPressed[menuKey]) {
+                    toggleGamepadMenu();
+                    keysPressed[menuKey] = true;
                 }
             } else {
-                player.isMenuButtonHeld = false;
+                keysPressed[menuKey] = false;
             }
         } 
-        // -----------------------------------------------------------------
-        // CASO 2: Mando NO ASIGNADO (Escuchar 'Start' para auto-asignar)
-        // -----------------------------------------------------------------
+        // CASO 2: Mando NO ASIGNADO
         else {
             const menuButtonPressed = (gamepad.buttons[9] && gamepad.buttons[9].pressed);
             const key = `Gamepad${gamepad.index}StartHeld`;
@@ -386,14 +429,13 @@ function handleGamepadInput() {
             if (menuButtonPressed && !keysPressed[key]) {
                 keysPressed[key] = true;
                 
-                // Buscar el primer jugador local (localPlayerIds) que NO esté en gamepadAssignments
                 const assignedPlayerIds = Object.values(gamepadAssignments);
                 let nextFreePlayerId = null;
 
                 for (const localId of localPlayerIds) {
                     if (!assignedPlayerIds.includes(localId)) {
                         nextFreePlayerId = localId;
-                        break; // Encontrado el primer P1, P2, etc. libre
+                        break; 
                     }
                 }
 
@@ -401,7 +443,6 @@ function handleGamepadInput() {
                     assignGamepad(gamepad.index, nextFreePlayerId);
                     statusDiv.textContent = `✅ Mando ${gamepad.index} asignado a Jugador ${nextFreePlayerId.substring(0, 7)}`;
                 } else {
-                    // Si no hay jugadores libres (quizás solo hay 1 local y ya está asignado)
                     statusDiv.textContent = `⚠️ Mando ${gamepad.index} detectado, pero no hay jugadores locales libres. Añade uno en el menú.`;
                 }
             } else if (!menuButtonPressed) {
@@ -410,7 +451,6 @@ function handleGamepadInput() {
         }
     }
 }
-// 💥💥 FIN DE LA FUNCIÓN MODIFICADA 💥💥
 
 
 // --- Manejo de la Conexión y Datos ---
@@ -457,6 +497,9 @@ socket.on('levelData', (data) => {
     currentGoalFlag = data.goalFlag;
     currentLadders = data.ladders || [];
     currentPortals = data.portals || [];
+    currentTeamZones = data.teamSelectZones || []; // ¡AÑADIDO!
+    currentModeZones = data.modeSelectZones || []; // ¡AÑADIDO!
+    
     levelNameDiv.textContent = `Nivel: ${data.levelName}`;
     gameRunning = true; 
     restartButton.style.display = 'none'; 
@@ -481,6 +524,18 @@ socket.on('gameState', (gameState) => {
     }
 });
 
+// 💥 NUEVO: Handler para Puntuación de Equipos
+socket.on('teamScoreUpdate', (scores) => {
+    teamScoreDiv.innerHTML = `<span class="team-red">Equipo Rojo: ${scores.red}</span> - <span class="team-blue">Equipo Azul: ${scores.blue}</span>`;
+});
+
+// 💥 NUEVO: Handler para Modo de Juego
+socket.on('gameModeUpdate', (mode) => {
+    // (Opcional: puedes mostrar el modo actual en la UI)
+    console.log("Modo de juego actualizado:", mode);
+});
+
+
 socket.on('disconnect', () => {
     statusDiv.textContent = '¡Desconectado! Recarga la página.';
     document.body.style.backgroundColor = '#2c3e50'; 
@@ -490,13 +545,14 @@ socket.on('gameOver', (data) => {
     gameRunning = false;
     const winner = players[data.winnerId];
     
-    if (data.winnerId === socket.id) {
-        statusDiv.textContent = `🎉 ¡HAS GANADO! ¡Tu color: ${winner.color}! Nueva ronda en 5s.`;
+    // 💥 CORRECCIÓN: Mostrar equipo ganador
+    if (winner) {
+        statusDiv.textContent = `🎉 ¡Ronda para el Equipo ${winner.team}! (Jugador ${winner.id.substring(0,4)}) 🎉. Volviendo al lobby...`;
+        statusDiv.style.color = winner.color; 
     } else {
-        statusDiv.textContent = `El Jugador ${winner.id} (${winner.color}) ha ganado. ¡Fin! Nueva ronda en 5s.`;
+        statusDiv.textContent = `🎉 ¡Ronda terminada! Volviendo al lobby...`;
     }
-    statusDiv.style.color = winner.color; 
-    restartButton.style.display = 'block'; 
+    // El botón de reinicio ya no es necesario
 });
 
 socket.on('dashEffect', (data) => {
@@ -507,14 +563,12 @@ socket.on('dashEffect', (data) => {
 // --- Lógica de Dibujo y Cámara ---
 function updateCamera(player) {
     
-    // Cámara Horizontal (X) - Usando VIEW_WIDTH
     let targetX = player.x - VIEW_WIDTH / 2;
     if (targetX < 0) targetX = 0;
     const maxCameraX = GAME_WORLD_WIDTH - VIEW_WIDTH; 
     if (targetX > maxCameraX) targetX = maxCameraX;
     cameraX = targetX;
 
-    // Cámara Vertical (Y) - Usando VIEW_HEIGHT
     let targetY = player.y - VIEW_HEIGHT / 2;
     if (targetY < 0) targetY = 0;
     const maxCameraY = GAME_WORLD_HEIGHT - VIEW_HEIGHT;
@@ -523,7 +577,6 @@ function updateCamera(player) {
 }
 
 
-// *** FUNCIÓN MODIFICADA PARA RESALTAR JUGADORES LOCALES ***
 function drawPlayer(player) {
     const drawX = player.x - cameraX;
     const drawY = player.y - cameraY; 
@@ -531,7 +584,6 @@ function drawPlayer(player) {
     ctx.fillStyle = player.color;
     ctx.fillRect(drawX, drawY, player.width, player.height);
     
-    // Efecto visual de Stun
     if (player.stunTimer > 0) {
         ctx.fillStyle = 'rgba(255, 255, 0, 0.7)'; 
         ctx.fillRect(drawX, drawY - 10, player.width, 5); 
@@ -540,14 +592,12 @@ function drawPlayer(player) {
         ctx.fillText('STUN!', drawX, drawY - 15);
     }
 
-    // Efecto visual de Wall Slide
     if (player.isWallSliding) {
         ctx.font = '12px sans-serif';
-        ctx.fillStyle = '#3498db'; // Azul
+        ctx.fillStyle = '#3498db';
         ctx.fillText('SLIDE', drawX, drawY - 5);
     }
     
-    // Resaltar a los jugadores controlados/vistos localmente
     if (localPlayerIds.includes(player.id)) {
         ctx.strokeStyle = 'white';
         ctx.lineWidth = 2;
@@ -555,7 +605,7 @@ function drawPlayer(player) {
     }
 }
 
-// Las funciones de dibujo (Sin Cambios)
+// Las funciones de dibujo
 function drawPlatforms() {
     if (currentPlatforms.length === 0) return; 
     currentPlatforms.forEach(p => { 
@@ -650,6 +700,42 @@ function drawPortals() {
     });
 }
 
+// 💥 NUEVO: Dibujar Zonas de Lobby
+function drawTeamSelectZones() {
+    if (currentTeamZones.length === 0) return;
+    currentTeamZones.forEach(zone => {
+        const drawX = zone.x - cameraX;
+        const drawY = zone.y - cameraY;
+        if (drawX + zone.width > 0 && drawX < VIEW_WIDTH && drawY + zone.height > 0 && drawY < VIEW_HEIGHT) {
+            ctx.fillStyle = zone.color;
+            ctx.globalAlpha = 0.3;
+            ctx.fillRect(drawX, drawY, zone.width, zone.height);
+            ctx.globalAlpha = 1.0;
+            ctx.font = '16px sans-serif';
+            ctx.fillStyle = 'white';
+            ctx.fillText(zone.team === 'red' ? 'EQUIPO ROJO' : 'EQUIPO AZUL', drawX + zone.width / 2, drawY + 30);
+        }
+    });
+}
+
+function drawModeSelectZones() {
+    if (currentModeZones.length === 0) return;
+    currentModeZones.forEach(zone => {
+        const drawX = zone.x - cameraX;
+        const drawY = zone.y - cameraY;
+        if (drawX + zone.width > 0 && drawX < VIEW_WIDTH && drawY + zone.height > 0 && drawY < VIEW_HEIGHT) {
+            ctx.fillStyle = zone.color;
+            ctx.globalAlpha = 0.3;
+            ctx.fillRect(drawX, drawY, zone.width, zone.height);
+            ctx.globalAlpha = 1.0;
+            ctx.font = '12px sans-serif';
+            ctx.fillStyle = 'black';
+            ctx.fillText(zone.mode === 'teams' ? 'Equipos' : 'Individual', drawX + zone.width / 2, drawY + 30);
+        }
+    });
+}
+
+
 function drawFlag() {
     if (currentGoalFlag && currentGoalFlag.width) {
         const drawX = currentGoalFlag.x - cameraX;
@@ -713,6 +799,8 @@ function gameLoop() {
         drawBoostZones();
         drawObstacles(); 
         drawFlag();
+        drawTeamSelectZones();
+        drawModeSelectZones();
         for (const id in players) {
             drawPlayer(players[id]);
         }
@@ -745,12 +833,10 @@ function gameLoop() {
         // 5. Transformación y Clipping
         ctx.save();
         
-        // Área de recorte (Clip)
         ctx.beginPath();
         ctx.rect(clipX, clipY, VIEW_WIDTH, VIEW_HEIGHT);
         ctx.clip();
         
-        // Trasladar para que (0, 0) sea la esquina superior de la celda
         ctx.translate(clipX, clipY);
 
         // 6. Dibujar la escena COMPLETA
@@ -761,6 +847,8 @@ function gameLoop() {
         drawBoostZones();
         drawObstacles(); 
         drawFlag();
+        drawTeamSelectZones(); // ¡AÑADIDO!
+        drawModeSelectZones(); // ¡AÑADIDO!
         
         // Dibujar a TODOS los jugadores
         for (const id in players) {
@@ -776,13 +864,11 @@ function gameLoop() {
     ctx.lineWidth = 4;
     
     if (activeLocalPlayers.length === 2) {
-        // Línea vertical para 2 jugadores
         ctx.beginPath();
         ctx.moveTo(VIEW_WIDTH, 0);
         ctx.lineTo(VIEW_WIDTH, CANVAS_HEIGHT);
         ctx.stroke();
     } else if (activeLocalPlayers.length >= 3) {
-        // Línea vertical y horizontal para 3 o 4 jugadores (cuadrícula)
         ctx.beginPath();
         ctx.moveTo(VIEW_WIDTH, 0);
         ctx.lineTo(VIEW_WIDTH, CANVAS_HEIGHT);
@@ -814,9 +900,14 @@ gameLoop();
 // --- Manejo de la Entrada del Jugador (Teclado) ---
 
 document.addEventListener('keydown', (e) => {
+    const gameKeys = [' ', 'ArrowUp', 'w', 'ArrowLeft', 'a', 'ArrowRight', 'd', 'ArrowDown', 's', 'Shift', 'j'];
+    if (gameKeys.includes(e.key) || gameKeys.includes(e.key.toLowerCase())) {
+        e.preventDefault();
+    }
+
     const localPlayer = players[socket.id];
     if (!gameRunning || (localPlayer && localPlayer.stunTimer > 0)) {
-        if (e.key === 'Shift' || e.key === ' ' || e.key === 'ArrowUp') {
+        if (e.key === 'Shift' || e.key === ' ' || e.key === 'ArrowUp' || e.key.toLowerCase() === 'w' || e.key.toLowerCase() === 's' || e.key.toLowerCase() === 'j') { 
             keysPressed[e.key] = true; 
         }
         return;
@@ -825,14 +916,18 @@ document.addEventListener('keydown', (e) => {
     if (!keysPressed[e.key]) {
         keysPressed[e.key] = true;
 
-        if (e.key === ' ' || e.key === 'ArrowUp') {
+        if (e.key === ' ' || e.key === 'ArrowUp' || e.key.toLowerCase() === 'w') { 
             socket.emit('playerAction', { action: 'jump' });
         } else if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') {
             socket.emit('playerAction', { action: 'startMoveLeft' });
         } else if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') {
             socket.emit('playerAction', { action: 'startMoveRight' });
+        } else if (e.key === 'ArrowDown' || e.key.toLowerCase() === 's') { 
+            socket.emit('playerAction', { action: 'startMoveDown' }); 
         } else if (e.key === 'Shift') { 
             socket.emit('playerAction', { action: 'dash' });
+        } else if (e.key.toLowerCase() === 'j') { 
+            socket.emit('playerAction', { action: 'startRun' });
         }
     }
 });
@@ -845,16 +940,26 @@ document.addEventListener('keyup', (e) => {
         return; 
     }
     
-    if (e.key === ' ' || e.key === 'ArrowUp') {
+    // DETENER MOVIMIENTO VERTICAL
+    if (e.key === ' ' || e.key === 'ArrowUp' || e.key.toLowerCase() === 'w') { 
         socket.emit('playerAction', { action: 'stopJump' });
+    } else if (e.key === 'ArrowDown' || e.key.toLowerCase() === 's') { 
+        socket.emit('playerAction', { action: 'stopMoveDown' });
     }
 
+    // DETENER MOVIMIENTO HORIZONTAL
     if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') {
         socket.emit('playerAction', { action: 'stopMoveLeft' });
     } else if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') {
         socket.emit('playerAction', { action: 'stopMoveRight' });
     }
+    
+    // DETENER "CORRER"
+    if (e.key.toLowerCase() === 'j') {
+        socket.emit('playerAction', { action: 'stopRun' });
+    }
 });
+
 
 // --- Manejo de la Detección de Mandos (Gamepad API Events) ---
 
