@@ -15,23 +15,17 @@ body {
 }
 
 #game-wrapper {
-    position: relative; /* Base para el menú de mandos (pop-up) */
+    position: relative; 
     border: 3px solid #f39c12; 
     box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
     display: block; 
     
-    /* 💥 CORRECCIÓN: El fondo oscuro va en el wrapper */
     background-color: #2c3e50; 
-    
-    /* 💥 CORRECCIÓN: Altura automática para contener la UI y el Canvas */
     height: auto; 
-    
-    /* 💥 CORRECCIÓN: JS controla el ancho, CSS centra el texto */
     text-align: center;
 }
 
 #game-canvas-container {
-    /* 💥 Fondo blanco para el Canvas */
     background-color: white; 
     display: block;
     /* JS controlará el width/height de este contenedor */
@@ -42,13 +36,7 @@ body {
 }
 
 #ui-overlay {
-    /* 💥 CORRECCIÓN: Quitado 'position: absolute'. Ahora es un bloque normal. */
-    /* position: absolute; */ 
-    
-    /* 💥 CORRECCIÓN: El fondo ya está en el wrapper. */
-    /* background-color: rgba(44, 62, 80, 0.8); */
-    
-    /* 💥 CORRECCIÓN: El padding se aplica a los elementos internos */
+    /* Es un bloque normal, no un overlay absoluto */
     padding: 10px 0; 
     
     display: flex; 
@@ -57,31 +45,47 @@ body {
     align-items: center; 
     
     color: #ecf0f1; 
-    /* 💥 CORRECCIÓN: Ya no es un overlay, no necesita pointer-events */
-    /* pointer-events: none; */
 }
 
-/* 💥 CORRECCIÓN: Quitado (ya no es necesario) */
-/* #status, #levelName, button, #dashStatus, #gamepadMenu {
-    pointer-events: auto;
-    color: inherit; 
-} */
-
 /* --- Estilos específicos de los elementos --- */
+
+#status, #levelName, #dashStatus, #gamepadButton {
+    padding: 0 20px; 
+    margin: 0; 
+}
 
 #status {
     font-size: 1.2em;
     font-weight: bold;
     color: #3498db; 
-    margin-bottom: 10px;
-    padding: 0 20px; /* Padding lateral */
+    margin-bottom: 5px; 
 }
+
+/* 💥 NUEVO: Puntuación de Equipos */
+#teamScore {
+    font-size: 1.3em;
+    font-weight: bold;
+    padding: 5px 10px;
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 5px;
+    margin-bottom: 10px;
+}
+
+.team-red {
+    color: #e74c3c; /* Rojo */
+    margin-right: 10px;
+}
+
+.team-blue {
+    color: #3498db; /* Azul */
+    margin-left: 10px;
+}
+
 
 #levelName {
     font-size: 1.1em;
-    margin-bottom: 10px;
+    margin-bottom: 5px; 
     color: #f1c40f; 
-    padding: 0 20px; /* Padding lateral */
 }
 
 button {
@@ -94,7 +98,7 @@ button {
     font-size: 1em;
     margin-top: 15px; 
     transition: background-color 0.3s ease;
-    display: inline-block; /* Para que se centren con text-align: center */
+    display: inline-block; 
 }
 
 button:hover {
@@ -122,7 +126,6 @@ button:hover {
 
 /* --- Menú de Mandos (Pop-up) --- */
 #gamepadMenu {
-    /* Este SÍ es un overlay, así que mantenemos el 'position: absolute' */
     position: absolute;
     top: 50%;
     left: 50%;
@@ -144,5 +147,5 @@ button:hover {
 
 #gamepadMenu button {
     margin: 10px auto; 
-    display: block; /* Asegura que el margin auto funcione */
+    display: block; 
 }
