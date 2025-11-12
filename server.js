@@ -30,6 +30,7 @@ const BOOST_DURATION = 3;
 
 // --- Stun ---
 const STUN_DURATION = 2.0; 
+const STUN_INVULNERABILITY_DURATION = 1.0; 
 
 // --- Wall Jump ---
 const WALL_SLIDE_SPEED = 100; 
@@ -46,6 +47,9 @@ const JUMP_DAMPENING = 0.5;
 let players = {}; 
 let goalFlag = {}; 
 let currentLevelIndex = -1; 
+let isGameOver = false;
+let gameTimer = 0; 
+let gameTimerHandle = null; 
 
 let currentPlatforms = [];
 let currentWalls = [];
@@ -53,18 +57,15 @@ let currentBoostZones = [];
 let currentObstacles = [];
 let currentLadders = [];
 let currentPortals = []; 
+let currentFerrisWheels = []; 
 
-// --- NUEVO: Mapa para gestionar cuántos jugadores locales tiene cada socket ---
 let localPlayersMap = {}; 
-// -----------------------------------------------------------------------------
 
-// --- Definición de Niveles ---
+// --- Definición de Niveles (RESTAURADOS + Noria) ---
 const LEVELS = [
     {
-        name: "La Gran Escalada (con Muros)",
+        name: "La Gran Escalada (con Noria)", // Nivel 1 modificado
         platforms: [
-            { x: 550, y: 700, width: 150, height: 10, color: '#e67e22' },
-            { x: 750, y: 480, width: 150, height: 10, color: '#e67e22' },
             { x: 950, y: 400, width: 100, height: 10, color: '#e67e22' },
             { x: 1100, y: 320, width: 100, height: 10, color: '#e67e22' },
             { x: 1250, y: 250, width: 150, height: 10, color: '#e67e22' },
@@ -74,14 +75,22 @@ const LEVELS = [
             { x: 0, y: 780, width: 500, height: 20, color: '#27ae60' }, 
             { x: 600, y: 540, width: 100, height: 20, color: '#e67e22' },
             { x: 400, y: 620, width: 20, height: 100, color: '#7f8c8d' }, 
-            { x: 730, y: 480, width: 20, height: 150, color: '#7f8c8d' }, 
             { x: 1230, y: 250, width: 20, height: 100, color: '#7f8c8d' } 
+        ],
+        ferrisWheels: [ 
+            { 
+                cx: 700, cy: 600, radius: 100, speed: 0.5, color: '#8e44ad',
+                platforms: [ 
+                    { angle: 0, width: 150, height: 10, x: 0, y: 0, vx: 0, vy: 0 }, // x/y/vx/vy se calcularán
+                    { angle: Math.PI, width: 150, height: 10, x: 0, y: 0, vx: 0, vy: 0 }
+                ]
+            }
         ],
         boostZones: [
             { x: 550, y: 680, width: 150, height: 5, color: '#3498db' } 
         ],
         obstacles: [
-            { x: 750, y: 450, width: 30, height: 30, color: '#e74c3c', min: 750, max: 900, speed: 100, dir: 1, isVertical: false },
+            { x: 950, y: 370, width: 30, height: 30, color: '#e74c3c', min: 950, max: 1100, speed: 100, dir: 1, isVertical: false },
         ],
         ladders: [],
         portals: [],
@@ -240,6 +249,7 @@ function resetGame(newLevel = true) {
     currentObstacles = JSON.parse(JSON.stringify(currentLevel.obstacles || [])); 
     currentLadders = currentLevel.ladders || []; 
     currentPortals = currentLevel.portals || []; 
+    currentFerrisWheels = JSON.parse(JSON.stringify(currentLevel.ferrisWheels || [])); 
 
     goalFlag = {
         x: currentLevel.goalX,
@@ -253,6 +263,13 @@ function resetGame(newLevel = true) {
     
     console.log(`Nivel cargado: ${currentLevel.name}`);
     
+    isGameOver = false;
+    gameTimer = 0; 
+    if (gameTimerHandle) {
+        clearInterval(gameTimerHandle); 
+        gameTimerHandle = null;
+    }
+
     io.sockets.emit('levelData', {
         platforms: currentPlatforms,
         boostZones: currentBoostZones,
@@ -260,6 +277,7 @@ function resetGame(newLevel = true) {
         walls: currentWalls,
         ladders: currentLadders,
         portals: currentPortals,
+        ferrisWheels: currentFerrisWheels,
         goalFlag: goalFlag,
         levelName: LEVELS[currentLevelIndex].name
     });
@@ -274,6 +292,7 @@ function resetPlayer(player, death = false) {
         player.x = 50;
         player.y = 740; 
         player.lastSafePlatform = { x: 50, y: 740 };
+        player.score = 0; 
         if (!death) {
             player.vx = 0; 
         }
@@ -281,12 +300,13 @@ function resetPlayer(player, death = false) {
     
     player.vy = 0;
     player.onGround = false;
-    player.score = 0; 
+    player.state = 'playing'; 
     player.lastDashTime = 0; 
     player.isDashing = false;
     player.dashTimer = 0;
     player.boostTimer = 0;
     player.stunTimer = 0; 
+    player.invulnerabilityTimer = 0;
     player.isWallSliding = false; 
     player.wallSlideDir = 0;   
     player.wallJumpTimer = 0;
@@ -294,13 +314,14 @@ function resetPlayer(player, death = false) {
     player.keys.down = false; 
     player.portalCooldownTimer = 0;
     player.isRunning = false; 
-    player.vx_override = 0; // Se asegura de que no haya velocidad residual
+    player.vx_override = 0;
+    player.ridingPlatform = null; 
 }
 
 resetGame();
 
 function getRandomColor() {
-    const letters = '0123456789ABCDEF';
+    const letters = '012456789ABCDEF';
     let color = '#';
     for (let i = 0; i < 6; i++) {
         color += letters[Math.floor(Math.random() * 16)];
@@ -309,29 +330,26 @@ function getRandomColor() {
 }
 
 function checkCollision(obj1, obj2) {
+    if (!obj1 || !obj2) return false;
     return obj1.x < obj2.x + obj2.width &&
            obj1.x + obj1.width > obj2.x &&
            obj1.y < obj2.y + obj2.height &&
            obj1.y + obj1.height > obj2.y;
 }
 
-io.on('connection', (socket) => {
-    console.log('Nuevo jugador conectado:', socket.id);
-    
-    // INICIALIZACIÓN DEL MAPA DE JUGADORES LOCALES PARA ESTE SOCKET
-    localPlayersMap[socket.id] = 0; 
-
-    // CREACIÓN DEL JUGADOR PRINCIPAL
-    players[socket.id] = {
-        id: socket.id,
+function createNewPlayer(id) {
+    players[id] = {
+        id: id,
         x: 50, y: 740, width: 20, height: 40,
         color: getRandomColor(),
         vx: 0, vy: 0, 
         onGround: false, score: 0, 
+        state: 'playing',
         lastDashTime: 0, 
         isDashing: false, dashTimer: 0,
         boostTimer: 0,
         stunTimer: 0, 
+        invulnerabilityTimer: 0,
         isWallSliding: false, 
         wallSlideDir: 0,   
         wallJumpTimer: 0, 
@@ -339,8 +357,19 @@ io.on('connection', (socket) => {
         keys: { up: false, down: false }, 
         portalCooldownTimer: 0, 
         isRunning: false, 
-        vx_override: 0, // <-- Asegurado para consistencia
+        vx_override: 0,
+        ridingPlatform: null,
     };
+    return players[id];
+}
+
+
+io.on('connection', (socket) => {
+    console.log('Nuevo jugador conectado:', socket.id);
+    
+    localPlayersMap[socket.id] = 0; 
+
+    createNewPlayer(socket.id);
     
     socket.emit('levelData', {
         platforms: currentPlatforms,
@@ -349,59 +378,42 @@ io.on('connection', (socket) => {
         walls: currentWalls, 
         ladders: currentLadders,
         portals: currentPortals,
+        ferrisWheels: currentFerrisWheels,
         goalFlag: goalFlag,
         levelName: LEVELS[currentLevelIndex].name
     });
     socket.emit('gameState', { players: players });
 
-    // ----------------------------------------------------------------------
-    // --- NUEVO HANDLER: Petición para crear un jugador local adicional ---
-    // ----------------------------------------------------------------------
+
     socket.on('requestLocalPlayer', () => {
         const count = localPlayersMap[socket.id] || 0;
         
-        // Limitar a un máximo de 3 jugadores locales (4 jugadores en total)
         if (count >= 3) return; 
         
         const playerId = socket.id + '_L' + count; 
         localPlayersMap[socket.id] = count + 1;
 
-        // Crear el objeto del nuevo jugador con las mismas propiedades
-        players[playerId] = {
-            id: playerId,
-            x: 50, y: 740, width: 20, height: 40,
-            color: getRandomColor(),
-            vx: 0, vy: 0, 
-            onGround: false, score: 0, 
-            lastDashTime: 0, 
-            isDashing: false, dashTimer: 0,
-            boostTimer: 0,
-            stunTimer: 0, 
-            isWallSliding: false, 
-            wallSlideDir: 0,   
-            wallJumpTimer: 0, 
-            lastSafePlatform: { x: 50, y: 740 },
-            keys: { up: false, down: false }, 
-            portalCooldownTimer: 0, 
-            isRunning: false, 
-            vx_override: 0,
-        };
-
-        resetPlayer(players[playerId]);
+        createNewPlayer(playerId);
         
-        // Notificar al cliente específico que un nuevo jugador fue creado
         io.to(socket.id).emit('localPlayerCreated', { playerId: playerId });
         console.log(`Jugador local adicional creado: ${playerId}`);
     });
-    // ----------------------------------------------------------------------
 
     socket.on('playerAction', (data) => {
-        // Usa data.playerId (para mandos) o socket.id (para teclado)
         const targetId = data.playerId || socket.id; 
         const player = players[targetId]; 
         
-        if (!player || player.score === 1 || player.stunTimer > 0) return; 
+        if (!player) return;
 
+        if (player.state === 'finished' || player.score === 1 || player.stunTimer > 0) {
+             if (player.state === 'finished' && (data.action === 'startMoveLeft' || data.action === 'startMoveRight')) {
+                io.to(socket.id).emit('spectatorChange', { 
+                    direction: data.action === 'startMoveLeft' ? -1 : 1 
+                });
+             }
+             return; 
+        }
+        
         switch(data.action) {
             case 'jump':
                 if (player.onGround) { 
@@ -413,9 +425,9 @@ io.on('connection', (socket) => {
                     player.wallJumpTimer = WALL_JUMP_COOLDOWN; 
                     player.isWallSliding = false;
                 }
-                player.keys.up = true; // Necesario para el Salto Variable
+                player.keys.up = true;
                 break;
-            case 'stopJump': // 💥 AGREGADO/CORREGIDO: Stop Jump para Salto Variable
+            case 'stopJump':
                 player.keys.up = false;
                 break;
             case 'startMoveDown':
@@ -436,10 +448,10 @@ io.on('connection', (socket) => {
             case 'stopMoveRight':
                 if (player.vx > 0) player.vx = 0;
                 break;
-            case 'startRun': // 💥 AGREGADO: Iniciar Correr
+            case 'startRun':
                 player.isRunning = true;
                 break;
-            case 'stopRun': // 💥 AGREGADO: Detener Correr
+            case 'stopRun':
                 player.isRunning = false;
                 break;
             case 'dash': 
@@ -448,7 +460,6 @@ io.on('connection', (socket) => {
                     player.isDashing = true;
                     player.dashTimer = DASH_DURATION;
                     player.lastDashTime = now;
-                    // Elige la dirección de dash. Si está quieto, usa la última dirección o derecha (1).
                     player.dashDirection = (player.vx !== 0) ? player.vx : 1;
                     
                     io.to(player.id).emit('dashEffect', { playerId: player.id });
@@ -457,25 +468,15 @@ io.on('connection', (socket) => {
         }
     });
 
-    // ----------------------------------------------------------------------
-    // --- HANDLER DE DESCONEXIÓN MODIFICADO ---
-    // ----------------------------------------------------------------------
     socket.on('disconnect', () => {
         console.log('Jugador desconectado:', socket.id);
         
-        // Eliminar todos los jugadores (principal y locales) asociados a este socket ID
         const playersToDelete = Object.keys(players).filter(id => id.startsWith(socket.id));
         playersToDelete.forEach(id => delete players[id]);
         
-        // Limpiar el contador de jugadores locales
         delete localPlayersMap[socket.id];
     });
-    // ----------------------------------------------------------------------
 
-    socket.on('requestRestartGame', () => {
-        console.log("Reiniciando juego por solicitud del cliente.");
-        resetGame(); 
-    });
 });
 
 
@@ -485,7 +486,7 @@ setInterval(() => {
     const now = Date.now();
     const deltaTime = (now - lastUpdateTime) / 1000; 
 
-    // 1. Mover Obstáculos
+    // 1. Mover Obstáculos y Ruedas de Noria
     for (const obs of currentObstacles) {
         if (obs.isVertical) {
             obs.y += (obs.speed * obs.dir) * deltaTime;
@@ -497,11 +498,27 @@ setInterval(() => {
             if (obs.x < obs.min) { obs.x = obs.min; obs.dir = 1; }
         }
     }
+    for (const wheel of currentFerrisWheels) {
+        for (const platform of wheel.platforms) {
+            const oldY = platform.y;
+            const oldX = platform.x;
+            
+            platform.angle += wheel.speed * deltaTime;
+            platform.x = wheel.cx + Math.cos(platform.angle) * wheel.radius - (platform.width / 2);
+            platform.y = wheel.cy + Math.sin(platform.angle) * wheel.radius - (platform.height / 2);
+            
+            platform.vx = (platform.x - oldX) / deltaTime;
+            platform.vy = (platform.y - oldY) / deltaTime;
+        }
+    }
+
 
     // 2. Lógica de Jugadores
     for (const id in players) {
         const player = players[id];
         
+        if (player.state === 'finished') continue; 
+
         // A. Manejar Stun Timer y Cooldowns
         if (player.stunTimer > 0) {
             player.stunTimer -= deltaTime;
@@ -510,7 +527,7 @@ setInterval(() => {
             player.y += player.vy * deltaTime;
             player.onGround = false;
             
-            const stunCollidables = [...currentWalls, ...currentPlatforms];
+            const stunCollidables = [...currentWalls, ...currentPlatforms, ...currentFerrisWheels.flatMap(w => w.platforms)];
             
             for (const platform of stunCollidables) {
                  if (checkCollision(player, platform) && player.vy > 0 && player.y + player.height > platform.y && player.y < platform.y) {
@@ -519,6 +536,9 @@ setInterval(() => {
                     player.onGround = true;
                  }
             }
+            if (player.stunTimer <= 0) {
+                player.invulnerabilityTimer = STUN_INVULNERABILITY_DURATION;
+            }
             continue; 
         }
 
@@ -526,7 +546,10 @@ setInterval(() => {
         if (player.boostTimer > 0) player.boostTimer -= deltaTime;
         if (player.wallJumpTimer > 0) player.wallJumpTimer -= deltaTime;
         if (player.portalCooldownTimer > 0) player.portalCooldownTimer -= deltaTime;
+        if (player.invulnerabilityTimer > 0) player.invulnerabilityTimer -= deltaTime;
         
+        player.ridingPlatform = null; 
+
         // C. Física Horizontal (X) y Lógica de Escalera
         let desired_vx = 0;
         let onLadder = false;
@@ -550,29 +573,32 @@ setInterval(() => {
             }
         }
         
-        // Si NO está en la escalera, aplicar gravedad Y SALTO VARIABLE
         if (!onLadder) {
-            player.vy += GRAVITY * deltaTime;
+            if (!player.isDashing) {
+                player.vy += GRAVITY * deltaTime;
+            }
             
-            // Lógica de Salto Variable
             if (player.vy < 0 && !player.keys.up) {
                 player.vy *= JUMP_DAMPENING; 
             }
         }
 
-        // 2. Movimiento Horizontal (CON LÓGICA DE CORRER)
+        // 2. Movimiento Horizontal
         let currentSpeed;
         if (player.boostTimer > 0) {
-            currentSpeed = HORIZONTAL_SPEED * BOOST_MULTIPLIER; // Boost anula todo
+            currentSpeed = HORIZONTAL_SPEED * BOOST_MULTIPLIER;
         } else if (player.isRunning) {
-            currentSpeed = RUN_SPEED; // Correr
+            currentSpeed = RUN_SPEED;
         } else {
-            currentSpeed = HORIZONTAL_SPEED; // Andar
+            currentSpeed = HORIZONTAL_SPEED;
         }
         
         if (player.isDashing) {
             player.dashTimer -= deltaTime;
             desired_vx = player.dashDirection * DASH_SPEED;
+            
+            player.vy = 0; 
+
             if (player.dashTimer <= 0) {
                 player.isDashing = false;
             }
@@ -588,43 +614,36 @@ setInterval(() => {
                  desired_vx = player.vx * (currentSpeed / 2);
             }
         }
-
+        
         player.x += desired_vx * deltaTime;
 
-        // D. Colisión Horizontal y Deslizamiento (SOLO CON WALLS SÓLIDOS)
+        // D. Colisión Horizontal y Deslizamiento
         player.isWallSliding = false; 
 
-        // Itera sobre los muros para corregir posición y activar deslizamiento
         for (const wall of currentWalls) {
             if (checkCollision(player, wall)) {
                 
-                // 1. CORRECCIÓN DE POSICIÓN (Debe ocurrir siempre)
-                if (desired_vx > 0) { // Jugador moviéndose a la derecha
+                if (desired_vx > 0) {
                     player.x = wall.x - player.width;
-                } else if (desired_vx < 0) { // Jugador moviéndose a la izquierda
+                } else if (desired_vx < 0) {
                     player.x = wall.x + wall.width;
                 }
                 
-                // 2. CANCELAR WALL JUMP (si hubo colisión horizontal)
                 if (desired_vx !== 0) {
                     player.vx_override = 0; 
                     player.wallJumpTimer = 0;
                 }
 
-                // 3. 💥 CANCELAR DASH AL COLISIONAR CON MURO 💥
                 if (player.isDashing) {
                     player.isDashing = false;
                     player.dashTimer = 0; 
                 }
                 
-                // 4. LÓGICA DE DESLIZAMIENTO (SOLO SI NO HAY COOLDOWN)
                 if (player.wallJumpTimer <= 0) {
                     if (!player.onGround && player.vy > 0) {
-                        // Deslizamiento a la derecha del muro (moviéndose a la izquierda)
                         if (player.vx === -1 && desired_vx < 0) { 
                             player.isWallSliding = true;
                             player.wallSlideDir = 1;
-                        // Deslizamiento a la izquierda del muro (moviéndose a la derecha)
                         } else if (player.vx === 1 && desired_vx > 0) { 
                             player.isWallSliding = true;
                             player.wallSlideDir = -1;
@@ -634,78 +653,99 @@ setInterval(() => {
             }
         }
 
-
         // E. Física Vertical (Y)
         if (player.isWallSliding) {
             if (player.vy > WALL_SLIDE_SPEED) {
                 player.vy = WALL_SLIDE_SPEED; 
             }
         }
+        
         player.y += player.vy * deltaTime;
         player.onGround = false;
 
+        // 💥💥 INICIO DE LA LÓGICA DE COLISIÓN CORREGIDA 💥💥
         // F. Colisiones Verticales
-        const allCollidables = [...currentPlatforms, ...currentWalls]; 
+        const allCollidables = [...currentPlatforms, ...currentWalls, ...currentFerrisWheels.flatMap(w => w.platforms)]; 
+        
         for (const platform of allCollidables) { 
             if (checkCollision(player, platform)) {
                 
                 const previousBottom = player.y + player.height - player.vy * deltaTime; 
-                
-                if (player.vy > 0 && previousBottom <= platform.y + 0.001) { 
-                    player.y = platform.y - player.height; 
-                    player.vy = 0; 
-                    player.onGround = true;
+                const previousTop = player.y - (player.vy * deltaTime);
+
+                let isNoriaPlat = false;
+                for(const wheel of currentFerrisWheels) {
+                    if(wheel.platforms.includes(platform)) {
+                        isNoriaPlat = true;
+                        break;
+                    }
+                }
+
+                // --- 1. ATERRIZAJE (Si el jugador se mueve hacia abajo) ---
+                if (player.vy >= 0) {
                     
-                    if (currentPlatforms.includes(platform) || currentWalls.includes(platform)) {
-                        player.lastSafePlatform.x = platform.x + (platform.width / 2) - (player.width / 2);
-                        player.lastSafePlatform.y = platform.y - player.height;
+                    let isSolidTop = currentWalls.includes(platform) || isNoriaPlat || currentPlatforms.includes(platform);
+                    
+                    // 💥 CORRECCIÓN: La lógica 'previousBottom' impedía aterrizar después de un 'head-bonk'.
+                    // Ahora, si el jugador está cayendo (vy >= 0) Y su parte inferior está "casi" en la parte superior de la plataforma
+                    // Y venía desde arriba (previousBottom), entonces aterriza.
+                    
+                    if (isSolidTop && previousBottom <= platform.y + 1) { 
+                    
+                        player.y = platform.y - player.height; 
+                        player.vy = 0; 
+                        player.onGround = true;
+
+                        if (isNoriaPlat) {
+                            player.ridingPlatform = platform; // "Pegar" al jugador
+                        } else if (currentPlatforms.includes(platform) || currentWalls.includes(platform)) {
+                            // Guardar como punto seguro
+                            player.lastSafePlatform.x = platform.x + (platform.width / 2) - (player.width / 2);
+                            player.lastSafePlatform.y = platform.y - player.height;
+                        }
                     }
                 }
                 
-                if (currentWalls.includes(platform)) {
-                    if (player.vy < 0 && (player.y - player.vy * deltaTime) >= platform.y + platform.height) {
+                // --- 2. GOLPE DE CABEZA (Si el jugador se mueve hacia arriba) ---
+                // 💥 CORRECCIÓN: Solo los Muros (currentWalls) bloquean por debajo.
+                // La Noria (isNoriaPlat) y las Plataformas (currentPlatforms) no.
+                if (player.vy < 0 && currentWalls.includes(platform)) {
+                    if (previousTop >= platform.y + platform.height - 1) {
                         player.y = platform.y + platform.height;
                         player.vy = 0; 
                     }
                 }
             }
         }
+        // 💥💥 FIN DE LA LÓGICA DE COLISIÓN CORREGIDA 💥💥
         
         // G. Colisiones con Zonas de Boost, Obstáculos y Portales
-        
-        // El dash te hace invencible a Stuns y Boosts
         if (!player.isDashing) { 
             for (const zone of currentBoostZones) {
                 if (checkCollision(player, zone)) player.boostTimer = BOOST_DURATION;
             }
             
             for (const obs of currentObstacles) {
-                if (checkCollision(player, obs)) player.stunTimer = STUN_DURATION;
+                if (checkCollision(player, obs) && player.invulnerabilityTimer <= 0) {
+                    player.stunTimer = STUN_DURATION;
+                    player.invulnerabilityTimer = STUN_DURATION + STUN_INVULNERABILITY_DURATION; 
+                }
             }
         }
 
-        // Lógica de Portales
         for (const portal of currentPortals) {
-            
             if (checkCollision(player, portal) && player.portalCooldownTimer <= 0) {
-                
                 const targetPortal = currentPortals.find(p => p.id === portal.targetId);
-
                 if (targetPortal) {
                     player.x = targetPortal.x;
                     player.y = targetPortal.y - player.height - 1; 
-                    
                     player.portalCooldownTimer = PORTAL_COOLDOWN_TIME;
-                    
                     player.vy = 0;
                     player.isDashing = false;
                     player.wallJumpTimer = 0;
                     player.isWallSliding = false;
-                    
                     player.x += (portal.x < targetPortal.x) ? 5 : -5;
-                    
                     io.to(player.id).emit('portalEffect', { playerId: player.id });
-                    
                     break; 
                 }
             }
@@ -714,31 +754,65 @@ setInterval(() => {
         // H. Límites del Mundo
         if (player.x < 0) {
             player.x = 0;
-            // 💥 CORRECCIÓN: Desactivar Wall Sliding en el límite izquierdo
             if (player.isWallSliding) player.isWallSliding = false; 
         }
         if (player.x + player.width > GAME_WORLD_WIDTH) {
             player.x = GAME_WORLD_WIDTH - player.width;
-            // 💥 CORRECCIÓN: Desactivar Wall Sliding en el límite derecho
             if (player.isWallSliding) player.isWallSliding = false; 
         }
 
-        // I. Victoria
+        // I. Victoria (Modo Espectador y Temporizador)
         if (player.score === 0 && checkCollision(player, goalFlag)) {
             player.score = 1; 
-            io.sockets.emit('gameOver', { winnerId: player.id, color: player.color });
-            setTimeout(() => resetGame(), 5000); 
+            player.state = 'finished'; // ¡Jugador terminado!
+            
+            // Si es el PRIMER jugador en terminar
+            if (gameTimerHandle === null) { 
+                gameTimer = 60; 
+                
+                io.sockets.emit('gameOver', { 
+                    winnerId: player.id, 
+                    color: player.color,
+                    message: `¡Jugador ${player.id.substring(0, 4)} ha ganado! ¡60s restantes!`
+                });
+                
+                gameTimerHandle = setInterval(() => {
+                    gameTimer--;
+                    
+                    const allPlayingFinished = Object.values(players).every(p => p.state === 'finished' || p.score === 1);
+                    
+                    if (allPlayingFinished && gameTimer > 5) {
+                        console.log("Todos han terminado. Reduciendo temporizador a 5s.");
+                        gameTimer = 5; 
+                    }
+
+                    if (gameTimer <= 0) {
+                        resetGame(); 
+                    }
+                    
+                    io.sockets.emit('gameTimerUpdate', gameTimer);
+                    
+                }, 1000);
+            }
         }
         
         // J. Muerte
         if (player.y > DEATH_Y) {
             resetPlayer(player, true); 
         }
-    }
+        
+        // K. LÓGICA DE STICKING (Adherencia a Noria)
+        if (player.ridingPlatform) {
+            player.x += player.ridingPlatform.vx * deltaTime;
+            player.y += player.ridingPlatform.vy * deltaTime;
+        }
+
+    } // <-- Fin del bucle 'for (const id in players)'
     
     // 3. Enviar estado
     io.sockets.emit('gameState', { players: players });
     io.sockets.emit('obstaclesUpdate', currentObstacles);
+    io.sockets.emit('ferrisWheelUpdate', currentFerrisWheels);
 
     lastUpdateTime = now;
 }, 1000 / 60); 
