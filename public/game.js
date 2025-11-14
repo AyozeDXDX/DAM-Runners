@@ -1,3 +1,5 @@
+// game.js (CORREGIDO)
+
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
@@ -16,17 +18,6 @@ levelNameDiv.id = 'levelName';
 
 const dashStatusDiv = document.createElement('div');
 dashStatusDiv.id = 'dashStatus';
-
-// --- Botón de Reinicio ---
-const restartButton = document.createElement('button');
-restartButton.id = 'restartButton'; 
-restartButton.textContent = 'Reiniciar Ronda (Nivel Aleatorio)';
-restartButton.style.display = 'none'; 
-restartButton.onclick = () => {
-    socket.emit('requestRestartGame');
-    restartButton.style.display = 'none';
-    statusDiv.textContent = `Petición de reinicio enviada...`;
-};
 
 // --- Botón de Mandos ---
 const gamepadButton = document.createElement('button');
@@ -48,14 +39,12 @@ menuContainer.style.zIndex = '1000';
 
 gamepadButton.onclick = toggleGamepadMenu;
 
-// Adjuntar elementos de UI al overlay
+// Adjuntar UI al Overlay
 uiOverlay.appendChild(statusDiv);
 uiOverlay.appendChild(levelNameDiv);
 uiOverlay.appendChild(dashStatusDiv);
 uiOverlay.appendChild(gamepadButton);
-uiOverlay.appendChild(restartButton);
 
-// Adjuntar el menú pop-up al body
 document.body.appendChild(menuContainer);
 
 
@@ -79,11 +68,18 @@ let currentWalls = [];
 let currentGoalFlag = {};
 let currentLadders = [];
 let currentPortals = [];
+let currentFerrisWheels = []; 
 let players = {};
 let gameRunning = true; 
 const keysPressed = {}; 
 let localPlayerColor = '#2c3e50'; 
 let localPlayerIds = [];
+
+// --- Estado de Espectador ---
+let isSpectating = false; // 💥 ¡CORRECCIÓN! Esto será 'true' solo si TODOS los locales terminaron
+let spectatorIndex = 0;
+let spectatorTargetId = null; // ID del jugador que estamos espectando
+// ----------------------------------
 
 const socket = io();
 let cameraX = 0; 
@@ -124,6 +120,7 @@ function updateCanvasDimensions(playerCount) {
     canvas.height = CANVAS_HEIGHT;
 
     gameWrapper.style.width = `${CANVAS_WIDTH}px`;
+    gameWrapper.style.height = `auto`; 
     
     gameCanvasContainer.style.width = `${CANVAS_WIDTH}px`;
     gameCanvasContainer.style.height = `${CANVAS_HEIGHT}px`;
@@ -163,7 +160,6 @@ function buildGamepadMenu() {
     h2.style.color = 'white';
     menuContainer.appendChild(h2);
     
-    // Botón para añadir jugadores locales (hasta 4)
     if (localPlayerIds.length < MAX_LOCAL_PLAYERS) {
         const addPlayerButton = document.createElement('button');
         addPlayerButton.textContent = `Añadir Jugador Local ${localPlayerIds.length + 1}`;
@@ -228,7 +224,6 @@ function buildGamepadMenu() {
     
     menuContainer.appendChild(localPlayersDiv);
 
-    // Mapear mandos disponibles
     const availableGamepadsDiv = document.createElement('div');
     availableGamepadsDiv.innerHTML = '<h3 style="color: #f39c12;">Mandos Conectados:</h3>';
 
@@ -289,96 +284,167 @@ function buildGamepadMenu() {
     menuContainer.appendChild(closeButton);
 }
 // --- Lógica de Manejo de Input del Mando (Gamepad) ---
-
-// 💥💥 FUNCIÓN handleGamepadInput MODIFICADA 💥💥
 function handleGamepadInput() {
-    if (showGamepadMenu) return; // No procesar inputs si el menú está abierto
+    if (showGamepadMenu) return; 
     
     const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
 
-    // Iterar sobre TODOS los slots de mando (0-3)
     for (let i = 0; i < gamepads.length; i++) {
         const gamepad = gamepads[i];
-        if (!gamepad) continue; // Si no hay mando en este slot, saltar
+        if (!gamepad) continue; 
 
         const playerId = gamepadAssignments[gamepad.index];
 
-        // -----------------------------------------------------------------
-        // CASO 1: Mando ASIGNADO (Procesar inputs del juego)
-        // -----------------------------------------------------------------
+        // CASO 1: Mando ASIGNADO
         if (playerId) {
             const player = players[playerId];
-            if (!player || player.stunTimer > 0) continue;
+            if (!player) continue;
 
-            // --- 1. MOVIMIENTO HORIZONTAL (Stick Izquierdo X O D-Pad) ---
+            // 💥 ¡CORRECCIÓN! Lógica de Espectador para Mando
+            // Solo si ESTE jugador ha terminado, O si el modo espectador global está activo.
+            if (player.state === 'finished' || isSpectating) {
+                const dpad_left = gamepad.buttons[14] && gamepad.buttons[14].pressed; 
+                const dpad_right = gamepad.buttons[15] && gamepad.buttons[15].pressed;
+                const keyLeft = `Gamepad${gamepad.index}SpecLeft`;
+                const keyRight = `Gamepad${gamepad.index}SpecRight`;
+                
+                if (dpad_left && !keysPressed[keyLeft]) {
+                    spectatorIndex--; // Controla el índice global
+                    keysPressed[keyLeft] = true;
+                } else if (!dpad_left) {
+                    keysPressed[keyLeft] = false;
+                }
+                
+                if (dpad_right && !keysPressed[keyRight]) {
+                    spectatorIndex++; // Controla el índice global
+                    keysPressed[keyRight] = true;
+                } else if (!dpad_right) {
+                    keysPressed[keyRight] = false;
+                }
+                continue; // No procesar más inputs de juego
+            }
+
+            if (player.stunTimer > 0) continue;
+
+            // --- 1. MOVIMIENTO HORIZONTAL ---
             const x_axis = gamepad.axes[0] || 0; 
-            const dpad_left = gamepad.buttons[14] && gamepad.buttons[14].pressed; 
-            const dpad_right = gamepad.buttons[15] && gamepad.buttons[15].pressed; 
+            const dpad_left_move = gamepad.buttons[14] && gamepad.buttons[14].pressed; 
+            const dpad_right_move = gamepad.buttons[15] && gamepad.buttons[15].pressed; 
             
-            if (x_axis > 0.1 || dpad_right) {
-                socket.emit('playerAction', { playerId: playerId, action: 'startMoveRight' });
-                socket.emit('playerAction', { playerId: playerId, action: 'stopMoveLeft' });
-            } else if (x_axis < -0.1 || dpad_left) {
-                socket.emit('playerAction', { playerId: playerId, action: 'startMoveLeft' });
-                socket.emit('playerAction', { playerId: playerId, action: 'stopMoveRight' });
-            } else {
-                 socket.emit('playerAction', { playerId: playerId, action: 'stopMoveRight' });
-                 socket.emit('playerAction', { playerId: playerId, action: 'stopMoveLeft' });
+            const leftKey = `Gamepad${gamepad.index}Left`;
+            const rightKey = `Gamepad${gamepad.index}Right`;
+            
+            if (x_axis > 0.1 || dpad_right_move) {
+                if (!keysPressed[rightKey]) {
+                    socket.emit('playerAction', { playerId: playerId, action: 'startMoveRight' });
+                    keysPressed[rightKey] = true;
+                }
+                if (keysPressed[leftKey]) { 
+                    socket.emit('playerAction', { playerId: playerId, action: 'stopMoveLeft' });
+                    keysPressed[leftKey] = false;
+                }
+            } else if (x_axis < -0.1 || dpad_left_move) {
+                if (!keysPressed[leftKey]) {
+                    socket.emit('playerAction', { playerId: playerId, action: 'startMoveLeft' });
+                    keysPressed[leftKey] = true;
+                }
+                if (keysPressed[rightKey]) { 
+                    socket.emit('playerAction', { playerId: playerId, action: 'stopMoveRight' });
+                    keysPressed[rightKey] = false;
+                }
+            } else { 
+                 if (keysPressed[leftKey]) {
+                    socket.emit('playerAction', { playerId: playerId, action: 'stopMoveLeft' });
+                    keysPressed[leftKey] = false;
+                 }
+                 if (keysPressed[rightKey]) {
+                    socket.emit('playerAction', { playerId: playerId, action: 'stopMoveRight' });
+                    keysPressed[rightKey] = false;
+                 }
             }
             
-            // --- 2. SALTO (A [0] - Salto Variable) ---
+            // --- 2. MOVIMIENTO VERTICAL (Salto/Escalera Arriba) ---
             const aButtonPressed = gamepad.buttons[0] && gamepad.buttons[0].pressed; 
-            if (aButtonPressed) {
-                if (!player.isJumpingHeld) {
+            const dpadUpPressed = gamepad.buttons[12] && gamepad.buttons[12].pressed;
+            const y_axis_up = (gamepad.axes[1] || 0) < -0.5; 
+            const jumpKey = `Gamepad${gamepad.index}Jump`; 
+
+            if (aButtonPressed || dpadUpPressed || y_axis_up) {
+                if (!keysPressed[jumpKey]) {
                     socket.emit('playerAction', { playerId: playerId, action: 'jump' });
-                    player.isJumpingHeld = true; 
+                    keysPressed[jumpKey] = true; 
                 }
             } else {
-                 if (player.isJumpingHeld) {
+                 if (keysPressed[jumpKey]) {
                      socket.emit('playerAction', { playerId: playerId, action: 'stopJump' });
-                     player.isJumpingHeld = false;
+                     keysPressed[jumpKey] = false;
                  }
             }
 
-            // --- 3. DASH (B [1] O RT [Eje 5 o 4]) ---
-            // 💥 CORRECCIÓN DInput: Añadido chequeo de Eje 4 (axes[4])
-            const rt_axis_xinput = gamepad.axes[5] || 0; // XInput (Xbox)
-            const rt_axis_dinput = gamepad.axes[4] || 0; // DInput (Otros)
-            const dashButtonPressed = (gamepad.buttons[1] && gamepad.buttons[1].pressed) || // Botón B
+            // --- 3. MOVIMIENTO VERTICAL (Escalera Abajo) ---
+            const dpadDownPressed = gamepad.buttons[13] && gamepad.buttons[13].pressed;
+            const y_axis_down = (gamepad.axes[1] || 0) > 0.5; 
+            const downKey = `Gamepad${gamepad.index}Down`; 
+
+            if (dpadDownPressed || y_axis_down) {
+                if (!keysPressed[downKey]) {
+                    socket.emit('playerAction', { playerId: playerId, action: 'startMoveDown' });
+                    keysPressed[downKey] = true; 
+                }
+            } else {
+                 if (keysPressed[downKey]) {
+                     socket.emit('playerAction', { playerId: playerId, action: 'stopMoveDown' });
+                     keysPressed[downKey] = false;
+                 }
+            }
+
+            // --- 4. DASH (B [1] O RT [Eje 5 o 4]) ---
+            const rt_axis_xinput = gamepad.axes[5] || 0; 
+            const rt_axis_dinput = gamepad.axes[4] || 0; 
+            const dashButtonPressed = (gamepad.buttons[1] && gamepad.buttons[1].pressed) || 
                                       (rt_axis_xinput > 0.5) ||
                                       (rt_axis_dinput > 0.5); 
+            const dashKey = `Gamepad${gamepad.index}Dash`;
                                       
             if (dashButtonPressed) { 
-                if (!player.isDashingButtonHeld) {
+                if (!keysPressed[dashKey]) {
                     socket.emit('playerAction', { playerId: playerId, action: 'dash' });
-                    player.isDashingButtonHeld = true; 
+                    keysPressed[dashKey] = true; 
                 }
             } else {
-                player.isDashingButtonHeld = false;
+                keysPressed[dashKey] = false;
             }
 
-            // --- 4. CORRER (X [3]) ---
+            // --- 5. CORRER (X [3]) ---
             const runButtonPressed = (gamepad.buttons[3] && gamepad.buttons[3].pressed); 
+            const runKey = `Gamepad${gamepad.index}Run`;
+                                 
             if (runButtonPressed) { 
-                 socket.emit('playerAction', { playerId: playerId, action: 'startRun' });
+                 if (!keysPressed[runKey]) {
+                     socket.emit('playerAction', { playerId: playerId, action: 'startRun' });
+                     keysPressed[runKey] = true;
+                 }
             } else {
-                 socket.emit('playerAction', { playerId: playerId, action: 'stopRun' });
+                 if (keysPressed[runKey]) {
+                     socket.emit('playerAction', { playerId: playerId, action: 'stopRun' });
+                     keysPressed[runKey] = false;
+                 }
             }
 
-            // --- 5. MENÚ (START [9]) ---
+            // --- 6. MENÚ (Start [9]) ---
             const menuButtonPressed = (gamepad.buttons[9] && gamepad.buttons[9].pressed);
+            const menuKey = `Gamepad${gamepad.index}Menu`;
+            
             if (menuButtonPressed) {
-                 if (!player.isMenuButtonHeld) {
-                    toggleGamepadMenu(); // Un mando asignado abre el menú
-                    player.isMenuButtonHeld = true;
+                 if (!keysPressed[menuKey]) {
+                    toggleGamepadMenu();
+                    keysPressed[menuKey] = true;
                 }
             } else {
-                player.isMenuButtonHeld = false;
+                keysPressed[menuKey] = false;
             }
         } 
-        // -----------------------------------------------------------------
-        // CASO 2: Mando NO ASIGNADO (Escuchar 'Start' para auto-asignar)
-        // -----------------------------------------------------------------
+        // CASO 2: Mando NO ASIGNADO
         else {
             const menuButtonPressed = (gamepad.buttons[9] && gamepad.buttons[9].pressed);
             const key = `Gamepad${gamepad.index}StartHeld`;
@@ -386,14 +452,13 @@ function handleGamepadInput() {
             if (menuButtonPressed && !keysPressed[key]) {
                 keysPressed[key] = true;
                 
-                // Buscar el primer jugador local (localPlayerIds) que NO esté en gamepadAssignments
                 const assignedPlayerIds = Object.values(gamepadAssignments);
                 let nextFreePlayerId = null;
 
                 for (const localId of localPlayerIds) {
                     if (!assignedPlayerIds.includes(localId)) {
                         nextFreePlayerId = localId;
-                        break; // Encontrado el primer P1, P2, etc. libre
+                        break; 
                     }
                 }
 
@@ -401,7 +466,6 @@ function handleGamepadInput() {
                     assignGamepad(gamepad.index, nextFreePlayerId);
                     statusDiv.textContent = `✅ Mando ${gamepad.index} asignado a Jugador ${nextFreePlayerId.substring(0, 7)}`;
                 } else {
-                    // Si no hay jugadores libres (quizás solo hay 1 local y ya está asignado)
                     statusDiv.textContent = `⚠️ Mando ${gamepad.index} detectado, pero no hay jugadores locales libres. Añade uno en el menú.`;
                 }
             } else if (!menuButtonPressed) {
@@ -410,13 +474,12 @@ function handleGamepadInput() {
         }
     }
 }
-// 💥💥 FIN DE LA FUNCIÓN MODIFICADA 💥💥
 
 
 // --- Manejo de la Conexión y Datos ---
 
 socket.on('connect', () => {
-    statusDiv.textContent = `Conectado. ID: ${socket.id}. Usa ESPACIO, A, D / Flechas para moverte. SHIFT para Dash.`;
+    statusDiv.textContent = `Conectado. ID: ${socket.id}. Usa ESPACIO/W, A/D, S, J (Correr), SHIFT (Dash).`;
     
     localPlayerIds = [socket.id]; 
     
@@ -457,14 +520,22 @@ socket.on('levelData', (data) => {
     currentGoalFlag = data.goalFlag;
     currentLadders = data.ladders || [];
     currentPortals = data.portals || [];
+    currentFerrisWheels = data.ferrisWheels || []; 
+    
     levelNameDiv.textContent = `Nivel: ${data.levelName}`;
     gameRunning = true; 
-    restartButton.style.display = 'none'; 
+    isSpectating = false; // Resetear espectador
+    spectatorIndex = 0;
 });
 
 socket.on('obstaclesUpdate', (obstaclesData) => {
     currentObstacles = obstaclesData;
 });
+
+socket.on('ferrisWheelUpdate', (ferrisWheelData) => {
+    currentFerrisWheels = ferrisWheelData;
+});
+
 
 socket.on('gameState', (gameState) => {
     players = gameState.players;
@@ -473,7 +544,7 @@ socket.on('gameState', (gameState) => {
     if (localPlayer) {
         if (localPlayerColor !== localPlayer.color) {
             localPlayerColor = localPlayer.color;
-            document.body.style.backgroundColor = localPlayerColor; 
+            document.body.style.backgroundColor = localPlayer.color; 
         }
         if (!localPlayer.isJumpingHeld) localPlayer.isJumpingHeld = false;
         if (!localPlayer.isDashingButtonHeld) localPlayer.isDashingButtonHeld = false;
@@ -481,23 +552,52 @@ socket.on('gameState', (gameState) => {
     }
 });
 
+
 socket.on('disconnect', () => {
     statusDiv.textContent = '¡Desconectado! Recarga la página.';
     document.body.style.backgroundColor = '#2c3e50'; 
 });
 
 socket.on('gameOver', (data) => {
-    gameRunning = false;
+    // 💥 ¡CORRECCIÓN CRÍTICA!
+    // NO activamos el modo espectador global aquí.
+    // Solo actualizamos el mensaje y el target de espectador inicial.
+    // isSpectating = true; // <-- ¡¡NO!! ESTE ES EL ERROR
+    
+    gameRunning = true; // Asegurarse de que el juego sigue
+    
     const winner = players[data.winnerId];
     
-    if (data.winnerId === socket.id) {
-        statusDiv.textContent = `🎉 ¡HAS GANADO! ¡Tu color: ${winner.color}! Nueva ronda en 5s.`;
-    } else {
-        statusDiv.textContent = `El Jugador ${winner.id} (${winner.color}) ha ganado. ¡Fin! Nueva ronda en 5s.`;
+    spectatorIndex = 0; // Empezar espectando al ganador (o al primero de la lista)
+    spectatorTargetId = data.winnerId;
+
+    if (winner) {
+        statusDiv.textContent = `🎉 ¡Jugador ${winner.id.substring(0,4)} ha ganado! 🎉. (Modo Espectador: A/D o D-Pad para cambiar)`;
+        statusDiv.style.color = winner.color; 
     }
-    statusDiv.style.color = winner.color; 
-    restartButton.style.display = 'block'; 
+    
+    // Cambiar texto si TÚ ganaste
+    if (localPlayerIds.includes(data.winnerId)) {
+        statusDiv.textContent = `🎉 ¡HAS GANADO! 🎉 (Espectando... A/D o D-Pad para cambiar)`;
+    }
 });
+
+socket.on('gameTimerUpdate', (timeLeft) => {
+    // 💥 CORRECCIÓN: Comprobar el estado del jugador local principal
+    const primaryPlayer = players[localPlayerIds[0]];
+    if (isSpectating || (primaryPlayer && primaryPlayer.state === 'finished')) {
+         statusDiv.textContent = `Nueva ronda en ${timeLeft}s... (Espectando a ${spectatorTargetId.substring(0,4)})`;
+    }
+});
+
+socket.on('spectatorChange', (data) => {
+    // 💥 CORRECCIÓN: Esto es solo si el jugador local está en modo espectador
+    const primaryPlayer = players[localPlayerIds[0]];
+    if (isSpectating || (primaryPlayer && primaryPlayer.state === 'finished')) {
+        spectatorIndex += data.direction;
+    }
+});
+
 
 socket.on('dashEffect', (data) => {
     // Efecto visual
@@ -506,15 +606,14 @@ socket.on('dashEffect', (data) => {
 
 // --- Lógica de Dibujo y Cámara ---
 function updateCamera(player) {
+    if (!player) return;
     
-    // Cámara Horizontal (X) - Usando VIEW_WIDTH
     let targetX = player.x - VIEW_WIDTH / 2;
     if (targetX < 0) targetX = 0;
     const maxCameraX = GAME_WORLD_WIDTH - VIEW_WIDTH; 
     if (targetX > maxCameraX) targetX = maxCameraX;
     cameraX = targetX;
 
-    // Cámara Vertical (Y) - Usando VIEW_HEIGHT
     let targetY = player.y - VIEW_HEIGHT / 2;
     if (targetY < 0) targetY = 0;
     const maxCameraY = GAME_WORLD_HEIGHT - VIEW_HEIGHT;
@@ -523,15 +622,23 @@ function updateCamera(player) {
 }
 
 
-// *** FUNCIÓN MODIFICADA PARA RESALTAR JUGADORES LOCALES ***
 function drawPlayer(player) {
+    // 💥 CORRECCIÓN: No ocultar jugadores, solo hacerlos transparentes si terminaron.
+    // if (player.state === 'finished' && !isSpectating) {
+    //     return; 
+    // }
+    
     const drawX = player.x - cameraX;
     const drawY = player.y - cameraY; 
     
     ctx.fillStyle = player.color;
+    // 💥 NUEVO: Hacer transparente al jugador si está terminado
+    ctx.globalAlpha = (player.state === 'finished') ? 0.3 : 1.0;
+    
     ctx.fillRect(drawX, drawY, player.width, player.height);
     
-    // Efecto visual de Stun
+    ctx.globalAlpha = 1.0; // Resetear transparencia
+    
     if (player.stunTimer > 0) {
         ctx.fillStyle = 'rgba(255, 255, 0, 0.7)'; 
         ctx.fillRect(drawX, drawY - 10, player.width, 5); 
@@ -540,22 +647,17 @@ function drawPlayer(player) {
         ctx.fillText('STUN!', drawX, drawY - 15);
     }
 
-    // Efecto visual de Wall Slide
     if (player.isWallSliding) {
         ctx.font = '12px sans-serif';
-        ctx.fillStyle = '#3498db'; // Azul
+        ctx.fillStyle = '#3498db';
         ctx.fillText('SLIDE', drawX, drawY - 5);
     }
     
-    // Resaltar a los jugadores controlados/vistos localmente
-    if (localPlayerIds.includes(player.id)) {
-        ctx.strokeStyle = 'white';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(drawX, drawY, player.width, player.height);
-    }
+    // 💥 CORRECCIÓN: El resaltado (stroke) se mueve al gameLoop principal
+    // para manejar correctamente la cámara/viewport.
 }
 
-// Las funciones de dibujo (Sin Cambios)
+// Funciones de Dibujo
 function drawPlatforms() {
     if (currentPlatforms.length === 0) return; 
     currentPlatforms.forEach(p => { 
@@ -650,6 +752,22 @@ function drawPortals() {
     });
 }
 
+function drawFerrisWheels() {
+    if (currentFerrisWheels.length === 0) return;
+    currentFerrisWheels.forEach(wheel => {
+        wheel.platforms.forEach(p => {
+            const drawX = p.x - cameraX;
+            const drawY = p.y - cameraY;
+            
+            if (drawX + p.width > 0 && drawX < VIEW_WIDTH && drawY + p.height > 0 && drawY < VIEW_HEIGHT) {
+                ctx.fillStyle = wheel.color || '#8e44ad';
+                ctx.fillRect(drawX, drawY, p.width, p.height);
+            }
+        });
+    });
+}
+
+
 function drawFlag() {
     if (currentGoalFlag && currentGoalFlag.width) {
         const drawX = currentGoalFlag.x - cameraX;
@@ -696,43 +814,92 @@ function updateUI(localPlayer) {
 // *** FUNCIÓN GAMELOOP ***
 function gameLoop() {
     // 1. Calcular jugadores activos
-    const activeLocalPlayers = localPlayerIds.slice(0, MAX_LOCAL_PLAYERS).filter(id => players[id]);
+    let activeLocalPlayers = localPlayerIds.slice(0, MAX_LOCAL_PLAYERS).filter(id => players[id]);
     
+    // 💥 ¡NUEVA LÓGICA DE ESPECTADOR!
+    // Se activa el modo espectador global (isSpectating) SI Y SÓLO SI
+    // TODOS los jugadores locales han terminado la carrera.
+    let allLocalPlayersFinished = activeLocalPlayers.length > 0 && activeLocalPlayers.every(id => players[id] && players[id].state === 'finished');
+    
+    isSpectating = allLocalPlayersFinished; // Actualizar el estado global
+
+    let cameraTarget = null; // Para el modo espectador global
+    
+    if (isSpectating) {
+        // 💥 MODO ESPECTADOR GLOBAL (TODOS TERMINARON)
+        const playingPlayers = Object.values(players).filter(p => p.state === 'playing');
+        const finishedPlayers = Object.values(players).filter(p => p.state === 'finished');
+        
+        // Prioritizar espectar a los que siguen jugando (si los hay)
+        let targetList = playingPlayers.length > 0 ? playingPlayers : finishedPlayers;
+
+        if (targetList.length > 0) {
+            if (spectatorIndex >= targetList.length) spectatorIndex = 0;
+            if (spectatorIndex < 0) spectatorIndex = targetList.length - 1;
+            cameraTarget = targetList[spectatorIndex];
+            spectatorTargetId = cameraTarget.id; 
+        } else {
+            cameraTarget = players[localPlayerIds[0]]; // Fallback
+        }
+        
+        // En modo espectador, siempre hay 1 vista
+        activeLocalPlayers = [cameraTarget ? cameraTarget.id : localPlayerIds[0]];
+    } else {
+        // 💥 MODO DE JUEGO NORMAL (ALGUIEN SIGUE JUGANDO)
+        // La lista de vistas (activeLocalPlayers) es la de jugadores locales
+        cameraTarget = players[localPlayerIds[0]]; // P1 controla la UI
+    }
+
     // 2. Ajustar el tamaño del canvas y las vistas
-    updateCanvasDimensions(activeLocalPlayers.length); 
+    updateCanvasDimensions(isSpectating ? 1 : activeLocalPlayers.length); 
     
     ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    if (activeLocalPlayers.length === 0) {
-        // Lógica de respaldo
-        updateCamera({ x: GAME_WORLD_WIDTH / 2, y: GAME_WORLD_HEIGHT / 2 }); 
-        drawPlatforms();
-        drawWalls(); 
-        drawLadders(); 
-        drawPortals();
-        drawBoostZones();
-        drawObstacles(); 
-        drawFlag();
-        for (const id in players) {
-            drawPlayer(players[id]);
-        }
+    if (activeLocalPlayers.length === 0 && players[socket.id]) {
+         activeLocalPlayers = [socket.id]; // Fallback
     }
 
-
+    // 💥 VISTAS (VIEWPORTS)
     activeLocalPlayers.forEach((playerId, index) => {
-        const player = players[playerId];
-        if (!player) return;
         
-        // 3. Configurar la cámara para el jugador en esta vista
-        updateCamera(player); 
+        // 💥 ¡LÓGICA DE CÁMARA POR VISTA!
+        let playerForThisView;
+
+        if (isSpectating) {
+            // Modo espectador global (todos terminaron), seguir al target global
+            playerForThisView = cameraTarget; 
+        } else {
+            // Modo split-screen
+            playerForThisView = players[playerId];
+            
+            if (playerForThisView && playerForThisView.state === 'finished') {
+                // Modo espectador INDIVIDUAL (este jugador terminó, pero otros no)
+                const playingPlayers = Object.values(players).filter(p => p.state === 'playing');
+                const finishedPlayers = Object.values(players).filter(p => p.state === 'finished');
+                let targetList = playingPlayers.length > 0 ? playingPlayers : finishedPlayers;
+                
+                if (targetList.length > 0) {
+                    // El spectatorIndex es global, controlado por el input de este jugador
+                    if (spectatorIndex >= targetList.length) spectatorIndex = 0;
+                    if (spectatorIndex < 0) spectatorIndex = targetList.length - 1;
+                    playerForThisView = targetList[spectatorIndex];
+                    spectatorTargetId = playerForThisView.id;
+                }
+            }
+        }
+
+        if (!playerForThisView) return; // Seguridad
+        
+        // 3. Configurar la cámara para ESTA VISTA
+        updateCamera(playerForThisView); 
         
         // 4. Calcular la posición de la sub-pantalla (celda dinámica)
         let clipX, clipY;
         
-        if (activeLocalPlayers.length === 1) {
+        if (activeLocalPlayers.length === 1) { // 1 Jugador (o espectador)
             clipX = 0;
             clipY = 0;
-        } else if (activeLocalPlayers.length === 2) {
+        } else if (activeLocalPlayers.length === 2) { // 2 Jugadores
             clipX = index * VIEW_WIDTH;
             clipY = 0;
         } else { // 3 o 4 jugadores (2x2)
@@ -745,12 +912,10 @@ function gameLoop() {
         // 5. Transformación y Clipping
         ctx.save();
         
-        // Área de recorte (Clip)
         ctx.beginPath();
         ctx.rect(clipX, clipY, VIEW_WIDTH, VIEW_HEIGHT);
         ctx.clip();
         
-        // Trasladar para que (0, 0) sea la esquina superior de la celda
         ctx.translate(clipX, clipY);
 
         // 6. Dibujar la escena COMPLETA
@@ -758,6 +923,7 @@ function gameLoop() {
         drawWalls(); 
         drawLadders(); 
         drawPortals();
+        drawFerrisWheels(); 
         drawBoostZones();
         drawObstacles(); 
         drawFlag();
@@ -765,6 +931,25 @@ function gameLoop() {
         // Dibujar a TODOS los jugadores
         for (const id in players) {
             drawPlayer(players[id]);
+        }
+        
+        // 6.5. 💥 ¡NUEVO! Dibujar resaltados (Stroke)
+        
+        // Resaltar el jugador que ESTA VISTA está siguiendo (borde amarillo)
+        if (playerForThisView) {
+            ctx.strokeStyle = '#f1c40f'; // Borde amarillo
+            ctx.lineWidth = 3;
+            ctx.strokeRect(playerForThisView.x - cameraX, playerForThisView.y - cameraY, playerForThisView.width, playerForThisView.height);
+        }
+        
+        // Resaltar OTROS jugadores locales que estén en esta vista (borde blanco)
+        for (const localId of localPlayerIds) {
+            if (localId !== playerForThisView.id && players[localId] && players[localId].state === 'playing') {
+                const otherLocal = players[localId];
+                ctx.strokeStyle = 'white'; 
+                ctx.lineWidth = 2;
+                ctx.strokeRect(otherLocal.x - cameraX, otherLocal.y - cameraY, otherLocal.width, otherLocal.height);
+            }
         }
         
         // 7. Restaurar el contexto
@@ -776,13 +961,11 @@ function gameLoop() {
     ctx.lineWidth = 4;
     
     if (activeLocalPlayers.length === 2) {
-        // Línea vertical para 2 jugadores
         ctx.beginPath();
         ctx.moveTo(VIEW_WIDTH, 0);
         ctx.lineTo(VIEW_WIDTH, CANVAS_HEIGHT);
         ctx.stroke();
     } else if (activeLocalPlayers.length >= 3) {
-        // Línea vertical y horizontal para 3 o 4 jugadores (cuadrícula)
         ctx.beginPath();
         ctx.moveTo(VIEW_WIDTH, 0);
         ctx.lineTo(VIEW_WIDTH, CANVAS_HEIGHT);
@@ -814,9 +997,31 @@ gameLoop();
 // --- Manejo de la Entrada del Jugador (Teclado) ---
 
 document.addEventListener('keydown', (e) => {
-    const localPlayer = players[socket.id];
-    if (!gameRunning || (localPlayer && localPlayer.stunTimer > 0)) {
-        if (e.key === 'Shift' || e.key === ' ' || e.key === 'ArrowUp') {
+    const gameKeys = [' ', 'ArrowUp', 'w', 'ArrowLeft', 'a', 'ArrowRight', 'd', 'ArrowDown', 's', 'Shift', 'j'];
+    if (gameKeys.includes(e.key) || gameKeys.includes(e.key.toLowerCase())) {
+        e.preventDefault();
+    }
+
+    const localPlayer = players[socket.id]; // Teclado solo controla P1
+
+    // 💥 ¡CORRECCIÓN! Lógica de Espectador para Teclado
+    // Si el JUGADOR 1 (teclado) ha terminado, O si TODOS han terminado (global)
+    if ((localPlayer && localPlayer.state === 'finished') || isSpectating) {
+        if (!keysPressed[e.key]) {
+            if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') {
+                spectatorIndex--;
+                keysPressed[e.key] = true;
+            } else if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') {
+                spectatorIndex++;
+                keysPressed[e.key] = true;
+            }
+        }
+        return; // No procesar inputs de juego
+    }
+
+    // 💥 CORRECCIÓN: (gameRunning ya no se usa para esto)
+    if (localPlayer && localPlayer.stunTimer > 0) {
+        if (e.key === 'Shift' || e.key === ' ' || e.key === 'ArrowUp' || e.key.toLowerCase() === 'w' || e.key.toLowerCase() === 's' || e.key.toLowerCase() === 'j') { 
             keysPressed[e.key] = true; 
         }
         return;
@@ -825,14 +1030,18 @@ document.addEventListener('keydown', (e) => {
     if (!keysPressed[e.key]) {
         keysPressed[e.key] = true;
 
-        if (e.key === ' ' || e.key === 'ArrowUp') {
+        if (e.key === ' ' || e.key === 'ArrowUp' || e.key.toLowerCase() === 'w') { 
             socket.emit('playerAction', { action: 'jump' });
         } else if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') {
             socket.emit('playerAction', { action: 'startMoveLeft' });
         } else if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') {
             socket.emit('playerAction', { action: 'startMoveRight' });
+        } else if (e.key === 'ArrowDown' || e.key.toLowerCase() === 's') { 
+            socket.emit('playerAction', { action: 'startMoveDown' }); 
         } else if (e.key === 'Shift') { 
             socket.emit('playerAction', { action: 'dash' });
+        } else if (e.key.toLowerCase() === 'j') { 
+            socket.emit('playerAction', { action: 'startRun' });
         }
     }
 });
@@ -840,21 +1049,36 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('keyup', (e) => {
     keysPressed[e.key] = false;
     
-    const localPlayer = players[socket.id];
-    if (!gameRunning || (localPlayer && localPlayer.stunTimer > 0)) {
+    const localPlayer = players[socket.id]; // Teclado solo controla P1
+
+    // 💥 CORRECCIÓN: Si P1 terminó, o todos terminaron, ignorar keyup de juego
+    if ((localPlayer && localPlayer.state === 'finished') || isSpectating) return; 
+
+    // 💥 CORRECCIÓN: (gameRunning ya no se usa)
+    if (localPlayer && localPlayer.stunTimer > 0) {
         return; 
     }
     
-    if (e.key === ' ' || e.key === 'ArrowUp') {
+    // DETENER MOVIMIENTO VERTICAL
+    if (e.key === ' ' || e.key === 'ArrowUp' || e.key.toLowerCase() === 'w') { 
         socket.emit('playerAction', { action: 'stopJump' });
+    } else if (e.key === 'ArrowDown' || e.key.toLowerCase() === 's') { 
+        socket.emit('playerAction', { action: 'stopMoveDown' });
     }
 
+    // DETENER MOVIMIENTO HORIZONTAL
     if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') {
         socket.emit('playerAction', { action: 'stopMoveLeft' });
     } else if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') {
         socket.emit('playerAction', { action: 'stopMoveRight' });
     }
+    
+    // DETENER "CORRER"
+    if (e.key.toLowerCase() === 'j') {
+        socket.emit('playerAction', { action: 'stopRun' });
+    }
 });
+
 
 // --- Manejo de la Detección de Mandos (Gamepad API Events) ---
 
