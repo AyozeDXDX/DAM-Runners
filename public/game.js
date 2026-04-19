@@ -16,13 +16,92 @@ statusDiv.textContent = 'Conectando al servidor...';
 const levelNameDiv = document.createElement('div'); 
 levelNameDiv.id = 'levelName';
 
-const dashStatusDiv = document.createElement('div');
-dashStatusDiv.id = 'dashStatus';
 
-// --- Botón de Mandos ---
-const gamepadButton = document.createElement('button');
-gamepadButton.id = 'gamepadButton';
-gamepadButton.textContent = 'Asignar Mandos (0 Asignados)';
+
+// --- Selector de Color ---
+const colorPickerContainer = document.createElement('div');
+colorPickerContainer.id = 'colorPickerContainer';
+colorPickerContainer.style.display = 'flex';
+colorPickerContainer.style.alignItems = 'center';
+colorPickerContainer.style.justifyContent = 'center';
+colorPickerContainer.style.gap = '8px';
+colorPickerContainer.style.marginBottom = '8px';
+
+const colorLabel = document.createElement('label');
+colorLabel.textContent = 'Tu color: ';
+colorLabel.style.color = '#ecf0f1';
+colorLabel.style.fontWeight = 'bold';
+colorLabel.style.fontSize = '0.9em';
+
+const colorInput = document.createElement('input');
+colorInput.type = 'color';
+colorInput.id = 'colorPicker';
+colorInput.value = '#2ecc71';
+colorInput.style.width = '40px';
+colorInput.style.height = '30px';
+colorInput.style.border = '2px solid #f39c12';
+colorInput.style.borderRadius = '4px';
+colorInput.style.cursor = 'pointer';
+colorInput.style.background = 'transparent';
+
+const hexInput = document.createElement('input');
+hexInput.type = 'text';
+hexInput.id = 'hexInput';
+hexInput.placeholder = '#2ecc71';
+hexInput.maxLength = 7;
+hexInput.style.width = '80px';
+hexInput.style.padding = '4px 8px';
+hexInput.style.border = '2px solid #f39c12';
+hexInput.style.borderRadius = '4px';
+hexInput.style.backgroundColor = 'rgba(0,0,0,0.3)';
+hexInput.style.color = '#ecf0f1';
+hexInput.style.fontFamily = 'monospace';
+hexInput.style.fontSize = '0.9em';
+hexInput.style.textAlign = 'center';
+
+const colorApplyBtn = document.createElement('button');
+colorApplyBtn.textContent = 'Aplicar';
+colorApplyBtn.style.padding = '4px 12px';
+colorApplyBtn.style.marginTop = '0';
+colorApplyBtn.style.fontSize = '0.85em';
+
+colorPickerContainer.appendChild(colorLabel);
+colorPickerContainer.appendChild(colorInput);
+colorPickerContainer.appendChild(hexInput);
+colorPickerContainer.appendChild(colorApplyBtn);
+
+// Sincronizar color picker y hex input
+colorInput.addEventListener('input', () => {
+    hexInput.value = colorInput.value;
+});
+
+hexInput.addEventListener('input', () => {
+    const val = hexInput.value;
+    if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+        colorInput.value = val;
+    }
+});
+
+function applyColor() {
+    let color = hexInput.value || colorInput.value;
+    if (!color.startsWith('#')) color = '#' + color;
+    if (/^#[0-9A-Fa-f]{6}$/.test(color)) {
+        socket.emit('setPlayerInfo', { color: color, os: myOS });
+        colorInput.value = color;
+        hexInput.value = color;
+        statusDiv.textContent = `✅ Color cambiado a ${color}`;
+    } else {
+        statusDiv.textContent = '❌ Código hex inválido. Usa formato: #RRGGBB';
+    }
+}
+
+colorApplyBtn.addEventListener('click', applyColor);
+hexInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        applyColor();
+    }
+});
 
 // --- Menú de Mandos (Pop-up) ---
 const menuContainer = document.createElement('div');
@@ -37,12 +116,18 @@ menuContainer.style.padding = '20px';
 menuContainer.style.border = '3px solid #f39c12';
 menuContainer.style.zIndex = '1000';
 
+// --- Botón de Mandos ---
+const gamepadButton = document.createElement('button');
+gamepadButton.id = 'gamepadButton';
+gamepadButton.textContent = 'Asignar Mandos (0 Asignados)';
+
 gamepadButton.onclick = toggleGamepadMenu;
 
 // Adjuntar UI al Overlay
 uiOverlay.appendChild(statusDiv);
 uiOverlay.appendChild(levelNameDiv);
-uiOverlay.appendChild(dashStatusDiv);
+uiOverlay.appendChild(colorPickerContainer);
+
 uiOverlay.appendChild(gamepadButton);
 
 document.body.appendChild(menuContainer);
@@ -54,12 +139,135 @@ const BASE_HEIGHT = 400;
 
 let CANVAS_WIDTH = BASE_WIDTH; 
 let CANVAS_HEIGHT = BASE_HEIGHT;
+
+// --- Detección de Sistema Operativo ---
+function getOS() {
+    const userAgent = window.navigator.userAgent;
+    const platform = window.navigator.platform;
+    const macosPlatforms = ['Macintosh', 'MacIntel', 'MacPPC', 'Mac68K'];
+    const windowsPlatforms = ['Win32', 'Win64', 'Windows', 'WinCE'];
+    const iosPlatforms = ['iPhone', 'iPad', 'iPod'];
+    let os = 'Unknown';
+
+    if (macosPlatforms.indexOf(platform) !== -1) {
+        os = 'Mac OS';
+    } else if (iosPlatforms.indexOf(platform) !== -1) {
+        os = 'iOS';
+    } else if (windowsPlatforms.indexOf(platform) !== -1) {
+        os = 'Windows';
+    } else if (/Android/.test(userAgent)) {
+        os = 'Android';
+    } else if (!os && /Linux/.test(platform)) {
+        os = 'Linux';
+    } else if (/Linux/.test(userAgent)) {
+        os = 'Linux';
+    }
+
+    return os;
+}
+
+const myOS = getOS();
+
 let VIEW_WIDTH = BASE_WIDTH;    
 let VIEW_HEIGHT = BASE_HEIGHT; 
 
 const MAX_LOCAL_PLAYERS = 4;
 const GAME_WORLD_WIDTH = 2500; 
 const GAME_WORLD_HEIGHT = 800;
+
+// --- Datos de fondo parallax (generados una vez) ---
+const bgMountains1 = [];
+const bgMountains2 = [];
+const bgClouds = [];
+
+(function generateBackground() {
+    // Capa 1: Montañas lejanas (color oscuro, picos grandes)
+    for (let x = 0; x < GAME_WORLD_WIDTH * 1.2; x += 80 + Math.random() * 60) {
+        bgMountains1.push({
+            x: x,
+            h: 80 + Math.random() * 120,
+            w: 100 + Math.random() * 80
+        });
+    }
+    // Capa 2: Montañas cercanas (más pequeñas, otro color)
+    for (let x = 0; x < GAME_WORLD_WIDTH * 1.1; x += 60 + Math.random() * 50) {
+        bgMountains2.push({
+            x: x,
+            h: 40 + Math.random() * 80,
+            w: 70 + Math.random() * 60
+        });
+    }
+    // Nubes
+    for (let i = 0; i < 12; i++) {
+        bgClouds.push({
+            x: Math.random() * GAME_WORLD_WIDTH * 1.5,
+            y: 20 + Math.random() * 150,
+            w: 60 + Math.random() * 100,
+            h: 20 + Math.random() * 25
+        });
+    }
+})();
+
+function drawBackground() {
+    // --- Cielo degradado ---
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, VIEW_HEIGHT);
+    skyGrad.addColorStop(0, '#0f1b35');
+    skyGrad.addColorStop(0.4, '#1a3a5c');
+    skyGrad.addColorStop(0.7, '#2d6187');
+    skyGrad.addColorStop(1, '#4a90a8');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, VIEW_WIDTH, VIEW_HEIGHT);
+    
+    // --- Estrellas (pequeños puntos fijos) ---
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    const starSeed = 42;
+    for (let i = 0; i < 30; i++) {
+        const sx = ((i * 137 + starSeed) % 800) - (cameraX * 0.02) % 800;
+        const sy = ((i * 97 + starSeed) % (VIEW_HEIGHT * 0.5));
+        if (sx >= 0 && sx < VIEW_WIDTH) {
+            ctx.fillRect(sx, sy, 1.5, 1.5);
+        }
+    }
+    
+    // --- Nubes (parallax 0.05) ---
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+    for (const c of bgClouds) {
+        const cx = c.x - cameraX * 0.05;
+        const cy = c.y - cameraY * 0.02;
+        if (cx + c.w > 0 && cx < VIEW_WIDTH) {
+            ctx.beginPath();
+            ctx.ellipse(cx + c.w/2, cy + c.h/2, c.w/2, c.h/2, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+    
+    // --- Montañas lejanas (parallax 0.15) ---
+    const mtn1Base = VIEW_HEIGHT - 20;
+    ctx.fillStyle = '#1a2a3a';
+    for (const m of bgMountains1) {
+        const mx = m.x - cameraX * 0.15;
+        if (mx + m.w > 0 && mx < VIEW_WIDTH) {
+            ctx.beginPath();
+            ctx.moveTo(mx, mtn1Base);
+            ctx.lineTo(mx + m.w / 2, mtn1Base - m.h);
+            ctx.lineTo(mx + m.w, mtn1Base);
+            ctx.fill();
+        }
+    }
+    
+    // --- Montañas cercanas (parallax 0.3) ---
+    ctx.fillStyle = '#253545';
+    for (const m of bgMountains2) {
+        const mx = m.x - cameraX * 0.3;
+        if (mx + m.w > 0 && mx < VIEW_WIDTH) {
+            ctx.beginPath();
+            ctx.moveTo(mx, mtn1Base);
+            ctx.lineTo(mx + m.w / 2, mtn1Base - m.h);
+            ctx.lineTo(mx + m.w, mtn1Base);
+            ctx.fill();
+        }
+    }
+}
 
 let currentPlatforms = []; 
 let currentBoostZones = [];
@@ -74,6 +282,8 @@ let gameRunning = true;
 const keysPressed = {}; 
 let localPlayerColor = '#2c3e50'; 
 let localPlayerIds = [];
+let myHostname = ''; // Nombre del PC del jugador
+let playerRanks = {}; // { playerId: rankNumber }
 
 // --- Estado de Espectador ---
 let isSpectating = false; // 💥 ¡CORRECCIÓN! Esto será 'true' solo si TODOS los locales terminaron
@@ -479,7 +689,7 @@ function handleGamepadInput() {
 // --- Manejo de la Conexión y Datos ---
 
 socket.on('connect', () => {
-    statusDiv.textContent = `Conectado. ID: ${socket.id}. Usa ESPACIO/W, A/D, S, J (Correr), SHIFT (Dash).`;
+    statusDiv.textContent = `Conectado como ${myHostname || socket.id.substring(0,8)}. Usa ESPACIO/W, A/D, S, J (Correr), SHIFT (Dash).`;
     
     localPlayerIds = [socket.id]; 
     
@@ -502,9 +712,19 @@ socket.on('connect', () => {
     }
 });
 
+socket.on('yourHostname', (hostname) => {
+    myHostname = hostname;
+    statusDiv.textContent = `Conectado como ${hostname}. Usa ESPACIO/W, A/D, S, J (Correr), SHIFT (Dash).`;
+    
+    // --- NUEVO: Enviar info de OS para el jugador principal ---
+    socket.emit('setPlayerInfo', { playerId: socket.id, os: myOS });
+});
+
 socket.on('localPlayerCreated', (data) => {
     if (!localPlayerIds.includes(data.playerId)) {
         localPlayerIds.push(data.playerId);
+        // --- NUEVO: Enviar info de OS para este jugador ---
+        socket.emit('setPlayerInfo', { playerId: data.playerId, os: myOS });
     }
     if (showGamepadMenu) {
         buildGamepadMenu(); 
@@ -544,7 +764,10 @@ socket.on('gameState', (gameState) => {
     if (localPlayer) {
         if (localPlayerColor !== localPlayer.color) {
             localPlayerColor = localPlayer.color;
-            document.body.style.backgroundColor = localPlayer.color; 
+            document.body.style.backgroundColor = localPlayer.color;
+            // Sincronizar el selector de color con el color del servidor
+            colorInput.value = localPlayer.color;
+            hexInput.value = localPlayer.color;
         }
         if (!localPlayer.isJumpingHeld) localPlayer.isJumpingHeld = false;
         if (!localPlayer.isDashingButtonHeld) localPlayer.isDashingButtonHeld = false;
@@ -572,7 +795,7 @@ socket.on('gameOver', (data) => {
     spectatorTargetId = data.winnerId;
 
     if (winner) {
-        statusDiv.textContent = `🎉 ¡Jugador ${winner.id.substring(0,4)} ha ganado! 🎉. (Modo Espectador: A/D o D-Pad para cambiar)`;
+        statusDiv.textContent = `🎉 ¡${winner.nickname || winner.id.substring(0,4)} ha ganado! 🎉. (Modo Espectador: A/D o D-Pad para cambiar)`;
         statusDiv.style.color = winner.color; 
     }
     
@@ -583,10 +806,11 @@ socket.on('gameOver', (data) => {
 });
 
 socket.on('gameTimerUpdate', (timeLeft) => {
-    // 💥 CORRECCIÓN: Comprobar el estado del jugador local principal
     const primaryPlayer = players[localPlayerIds[0]];
     if (isSpectating || (primaryPlayer && primaryPlayer.state === 'finished')) {
-         statusDiv.textContent = `Nueva ronda en ${timeLeft}s... (Espectando a ${spectatorTargetId.substring(0,4)})`;
+         const targetPlayer = players[spectatorTargetId];
+         const targetName = targetPlayer ? (targetPlayer.nickname || spectatorTargetId.substring(0,4)) : '...';
+         statusDiv.textContent = `Nueva ronda en ${timeLeft}s... (Espectando a ${targetName})`;
     }
 });
 
@@ -622,39 +846,134 @@ function updateCamera(player) {
 }
 
 
-function drawPlayer(player) {
-    // 💥 CORRECCIÓN: No ocultar jugadores, solo hacerlos transparentes si terminaron.
-    // if (player.state === 'finished' && !isSpectating) {
-    //     return; 
-    // }
+// Calcula el ranking de todos los jugadores por proximidad a la meta
+function calculateRanks() {
+    if (!currentGoalFlag || !currentGoalFlag.width) return;
+    const goalCX = currentGoalFlag.x + currentGoalFlag.width / 2;
+    const goalCY = currentGoalFlag.y + currentGoalFlag.height / 2;
     
+    const sorted = Object.values(players).map(p => {
+        const dx = p.x - goalCX;
+        const dy = p.y - goalCY;
+        return { id: p.id, finished: p.state === 'finished', dist: Math.sqrt(dx*dx + dy*dy) };
+    });
+    
+    // Finished players first (closest dist among finished), then by distance
+    sorted.sort((a, b) => {
+        if (a.finished && !b.finished) return -1;
+        if (!a.finished && b.finished) return 1;
+        return a.dist - b.dist;
+    });
+    
+    playerRanks = {};
+    sorted.forEach((entry, i) => { playerRanks[entry.id] = i + 1; });
+}
+
+function drawPlayer(player) {
     const drawX = player.x - cameraX;
     const drawY = player.y - cameraY; 
     
     ctx.fillStyle = player.color;
-    // 💥 NUEVO: Hacer transparente al jugador si está terminado
     ctx.globalAlpha = (player.state === 'finished') ? 0.3 : 1.0;
-    
     ctx.fillRect(drawX, drawY, player.width, player.height);
+    ctx.globalAlpha = 1.0;
     
-    ctx.globalAlpha = 1.0; // Resetear transparencia
+    // --- NAMETAG con PUESTO ---
+    const nickname = player.nickname || player.id.substring(0, 8);
+    const rank = playerRanks[player.id] || '?';
+    const rankText = rank + 'º';
     
+    ctx.font = 'bold 10px monospace';
+    const nameWidth = ctx.measureText(nickname).width;
+    ctx.font = 'bold 9px monospace';
+    const rankWidth = ctx.measureText(rankText).width;
+    
+    const badgeSize = 13;
+    const gap = 2;
+    const totalWidth = badgeSize + gap + nameWidth + 6;
+    const tagCenterX = drawX + player.width / 2;
+    const tagStartX = tagCenterX - totalWidth / 2;
+    const tagY = drawY - 10;
+    
+    // Badge del puesto (cuadrado coloreado)
+    const rankColors = ['#f1c40f', '#bdc3c7', '#e67e22', '#95a5a6'];
+    const badgeColor = rankColors[Math.min(rank - 1, 3)] || '#95a5a6';
+    
+    ctx.fillStyle = badgeColor;
+    ctx.fillRect(tagStartX, tagY - 1, badgeSize, badgeSize);
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(rankText, tagStartX + badgeSize / 2, tagY + 9);
+    
+    // Fondo del nametag
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(tagStartX + badgeSize + gap, tagY - 1, nameWidth + 6, badgeSize);
+    
+    // Texto del nametag
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(nickname, tagStartX + badgeSize + gap + (nameWidth + 6) / 2, tagY + 9);
+    ctx.textAlign = 'left';
+
+    // --- ICONO DE SISTEMA OPERATIVO ---
+    if (player.os) {
+        let osEmoji = '❓';
+        if (player.os === 'Windows') osEmoji = '🪟';
+        else if (player.os === 'Mac OS') osEmoji = '🍎';
+        else if (player.os === 'Linux') osEmoji = '🐧';
+        else if (player.os === 'Android') osEmoji = '🤖';
+        else if (player.os === 'iOS') osEmoji = '📱';
+
+        ctx.font = '12px serif';
+        ctx.textAlign = 'center';
+        
+        // Fondo para el icono
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(tagCenterX - 8, tagY - 17, 16, 15);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(osEmoji, tagCenterX, tagY - 5);
+        ctx.textAlign = 'left';
+    }
+    
+    // --- BARRA DE COOLDOWN DEL DASH ---
+    const DASH_CD_MS = 2000;
+    const barWidth = player.width + 4;
+    const barHeight = 3;
+    const barX = drawX - 2;
+    const barY = drawY + player.height + 3;
+    
+    const elapsed = Date.now() - (player.lastDashTime || 0);
+    const fillRatio = Math.min(elapsed / DASH_CD_MS, 1);
+    
+    // Fondo de la barra (gris oscuro)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(barX, barY, barWidth, barHeight);
+    
+    // Relleno (verde progresivo, rojo si no está listo)
+    if (fillRatio >= 1) {
+        ctx.fillStyle = '#2ecc71';
+    } else {
+        ctx.fillStyle = '#e74c3c';
+    }
+    ctx.fillRect(barX, barY, barWidth * fillRatio, barHeight);
+    
+    // --- Indicadores de estado ---
     if (player.stunTimer > 0) {
         ctx.fillStyle = 'rgba(255, 255, 0, 0.7)'; 
-        ctx.fillRect(drawX, drawY - 10, player.width, 5); 
-        ctx.font = '12px sans-serif';
+        ctx.fillRect(drawX, tagY - 8, player.width, 4); 
+        ctx.font = '10px sans-serif';
         ctx.fillStyle = 'yellow';
-        ctx.fillText('STUN!', drawX, drawY - 15);
+        ctx.fillText('STUN!', drawX - 2, tagY - 12);
     }
 
     if (player.isWallSliding) {
-        ctx.font = '12px sans-serif';
+        ctx.font = '10px sans-serif';
         ctx.fillStyle = '#3498db';
-        ctx.fillText('SLIDE', drawX, drawY - 5);
+        ctx.fillText('SLIDE', drawX - 2, tagY - 5);
     }
-    
-    // 💥 CORRECCIÓN: El resaltado (stroke) se mueve al gameLoop principal
-    // para manejar correctamente la cámara/viewport.
 }
 
 // Funciones de Dibujo
@@ -784,31 +1103,7 @@ function drawFlag() {
 }
 
 
-// --- Actualización de la UI (Dash Cooldown) ---
-function updateUI(localPlayer) {
-    if (!localPlayer) {
-        dashStatusDiv.textContent = 'Dash: (Conectando...)';
-        return;
-    }
-    
-    if (localPlayer.stunTimer > 0) {
-        dashStatusDiv.textContent = `¡ATURDIDO! (${localPlayer.stunTimer.toFixed(1)}s)`;
-        dashStatusDiv.className = 'cooldown';
-        return;
-    }
-    
-    const DASH_COOLDOWN_MS = 2 * 1000;
-    const now = Date.now();
-    const cooldownRemaining = (localPlayer.lastDashTime + DASH_COOLDOWN_MS) - now;
 
-    if (cooldownRemaining > 0) {
-        dashStatusDiv.textContent = `Dash: ${(cooldownRemaining / 1000).toFixed(1)}s`;
-        dashStatusDiv.className = 'cooldown';
-    } else {
-        dashStatusDiv.textContent = 'Dash: ¡LISTO!';
-        dashStatusDiv.className = 'ready';
-    }
-}
 
 
 // *** FUNCIÓN GAMELOOP ***
@@ -918,7 +1213,10 @@ function gameLoop() {
         
         ctx.translate(clipX, clipY);
 
-        // 6. Dibujar la escena COMPLETA
+        // 6. Dibujar fondo parallax
+        drawBackground();
+
+        // 7. Dibujar la escena COMPLETA
         drawPlatforms();
         drawWalls(); 
         drawLadders(); 
@@ -928,7 +1226,8 @@ function gameLoop() {
         drawObstacles(); 
         drawFlag();
         
-        // Dibujar a TODOS los jugadores
+        // Calcular ranking y dibujar a TODOS los jugadores
+        calculateRanks();
         for (const id in players) {
             drawPlayer(players[id]);
         }
@@ -980,11 +1279,7 @@ function gameLoop() {
     // 9. Procesar entrada del mando
     handleGamepadInput();
     
-    // 10. Actualizar la UI del jugador principal (si existe)
-    const primaryPlayer = players[socket.id]; 
-    if (primaryPlayer) {
-        updateUI(primaryPlayer); 
-    }
+
 
     requestAnimationFrame(gameLoop);
 }
@@ -997,6 +1292,9 @@ gameLoop();
 // --- Manejo de la Entrada del Jugador (Teclado) ---
 
 document.addEventListener('keydown', (e) => {
+    // No procesar teclas de juego si el usuario está escribiendo en un input
+    if (document.activeElement === hexInput) return;
+    
     const gameKeys = [' ', 'ArrowUp', 'w', 'ArrowLeft', 'a', 'ArrowRight', 'd', 'ArrowDown', 's', 'Shift', 'j'];
     if (gameKeys.includes(e.key) || gameKeys.includes(e.key.toLowerCase())) {
         e.preventDefault();
@@ -1047,6 +1345,9 @@ document.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('keyup', (e) => {
+    // No procesar teclas de juego si el usuario está escribiendo en un input
+    if (document.activeElement === hexInput) return;
+    
     keysPressed[e.key] = false;
     
     const localPlayer = players[socket.id]; // Teclado solo controla P1
@@ -1100,3 +1401,197 @@ window.addEventListener("gamepaddisconnected", (e) => {
         buildGamepadMenu();
     }
 });
+
+
+// ============================================================
+// --- CONTROLES TÁCTILES (MOBILE) ---
+// ============================================================
+
+const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
+if (isTouchDevice) {
+    // --- Simplificar la UI para móvil ---
+    const mobileStyle = document.createElement('style');
+    mobileStyle.textContent = `
+        @media (max-width: 1023px), (hover: none) {
+            body {
+                align-items: flex-start;
+                min-height: auto;
+            }
+            #game-wrapper {
+                width: 100vw !important;
+                border: none;
+                box-shadow: none;
+            }
+            #game-canvas-container {
+                width: 100vw !important;
+            }
+            #gameCanvas {
+                width: 100vw !important;
+                height: auto !important;
+            }
+            #ui-overlay {
+                padding: 4px 0;
+                gap: 2px;
+            }
+            #status {
+                font-size: 0.75em;
+                margin-bottom: 2px;
+                padding: 0 8px;
+            }
+            #levelName {
+                font-size: 0.75em;
+                margin-bottom: 2px;
+                padding: 0 8px;
+            }
+            #colorPickerContainer {
+                margin-bottom: 2px !important;
+                gap: 4px !important;
+            }
+            #colorPickerContainer label { font-size: 0.7em !important; }
+            #colorPicker { width: 28px !important; height: 22px !important; }
+            #hexInput { width: 60px !important; font-size: 0.7em !important; padding: 2px 4px !important; }
+            #colorPickerContainer button { font-size: 0.7em !important; padding: 2px 8px !important; }
+            #dashStatus { display: none !important; }
+            #gamepadButton { display: none !important; }
+        }
+    `;
+    document.head.appendChild(mobileStyle);
+
+    // --- Controles táctiles ---
+    const touchControls = document.createElement('div');
+    touchControls.id = 'touch-controls';
+    touchControls.innerHTML = `
+        <div id="touch-left-zone">
+            <button id="touch-left" class="touch-btn touch-dpad">◀</button>
+            <button id="touch-right" class="touch-btn touch-dpad">▶</button>
+        </div>
+        <div id="touch-right-zone">
+            <button id="touch-run" class="touch-btn touch-run-btn">RUN</button>
+            <button id="touch-dash" class="touch-btn touch-dash-btn">DASH</button>
+            <button id="touch-jump" class="touch-btn touch-jump-btn">▲</button>
+        </div>
+    `;
+    document.body.appendChild(touchControls);
+
+    const touchStyle = document.createElement('style');
+    touchStyle.textContent = `
+        #touch-controls {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            padding: 10px 15px 18px 15px;
+            z-index: 9999;
+            pointer-events: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        #touch-left-zone,
+        #touch-right-zone {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+            pointer-events: auto;
+        }
+
+        .touch-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            border-radius: 50%;
+            font-weight: bold;
+            color: white;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+
+        .touch-btn.active {
+            transform: scale(0.9);
+            filter: brightness(1.4);
+        }
+
+        .touch-dpad {
+            width: 62px;
+            height: 62px;
+            font-size: 24px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.35);
+        }
+
+        .touch-jump-btn {
+            width: 75px;
+            height: 75px;
+            font-size: 26px;
+            background: rgba(46, 204, 113, 0.4);
+            border: 2px solid rgba(46, 204, 113, 0.7);
+        }
+
+        .touch-dash-btn {
+            width: 58px;
+            height: 58px;
+            font-size: 11px;
+            letter-spacing: 1px;
+            background: rgba(231, 76, 60, 0.4);
+            border: 2px solid rgba(231, 76, 60, 0.7);
+        }
+
+        .touch-run-btn {
+            width: 58px;
+            height: 58px;
+            font-size: 11px;
+            letter-spacing: 1px;
+            background: rgba(52, 152, 219, 0.4);
+            border: 2px solid rgba(52, 152, 219, 0.7);
+        }
+
+        @media (min-width: 1024px) and (hover: hover) {
+            #touch-controls { display: none; }
+        }
+    `;
+    document.head.appendChild(touchStyle);
+
+    function bindTouchButton(elementId, startAction, stopAction) {
+        const btn = document.getElementById(elementId);
+        if (!btn) return;
+
+        btn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            btn.classList.add('active');
+            socket.emit('playerAction', { action: startAction });
+        }, { passive: false });
+
+        btn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            btn.classList.remove('active');
+            if (stopAction) {
+                socket.emit('playerAction', { action: stopAction });
+            }
+        }, { passive: false });
+
+        btn.addEventListener('touchcancel', () => {
+            btn.classList.remove('active');
+            if (stopAction) {
+                socket.emit('playerAction', { action: stopAction });
+            }
+        });
+    }
+
+    bindTouchButton('touch-jump', 'jump', 'stopJump');
+    bindTouchButton('touch-left', 'startMoveLeft', 'stopMoveLeft');
+    bindTouchButton('touch-right', 'startMoveRight', 'stopMoveRight');
+    bindTouchButton('touch-dash', 'dash', null);
+    bindTouchButton('touch-run', 'startRun', 'stopRun');
+
+    document.addEventListener('touchstart', (e) => {
+        if (e.target.classList.contains('touch-btn')) {
+            e.preventDefault();
+        }
+    }, { passive: false });
+}

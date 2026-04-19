@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const socketio = require('socket.io');
+const os = require('os');
 
 const app = express();
 const server = http.createServer(app);
@@ -230,6 +231,213 @@ const LEVELS = [
         goalX: 2150, 
         goalY: 740,  
     },
+    // ===================== NUEVOS NIVELES =====================
+    {
+        name: "Sprint del Cañón",
+        platforms: [
+            { x: 250, y: 650, width: 120, height: 10, color: '#d35400' },
+            { x: 550, y: 580, width: 100, height: 10, color: '#d35400' },
+            { x: 850, y: 520, width: 100, height: 10, color: '#d35400' },
+            { x: 1150, y: 600, width: 130, height: 10, color: '#d35400' },
+            { x: 1450, y: 500, width: 100, height: 10, color: '#d35400' },
+            { x: 1750, y: 580, width: 120, height: 10, color: '#d35400' },
+            { x: 2050, y: 650, width: 150, height: 10, color: '#d35400' },
+        ],
+        walls: [
+            { x: 0, y: 780, width: 300, height: 20, color: '#27ae60' },
+            { x: 700, y: 680, width: 100, height: 20, color: '#7f8c8d' },
+            { x: 1350, y: 700, width: 80, height: 80, color: '#7f8c8d' },
+        ],
+        boostZones: [
+            { x: 250, y: 630, width: 120, height: 5, color: '#3498db' },
+            { x: 1450, y: 480, width: 100, height: 5, color: '#3498db' },
+        ],
+        obstacles: [
+            { x: 600, y: 550, width: 25, height: 25, color: '#e74c3c', min: 550, max: 750, speed: 150, dir: 1, isVertical: false },
+            { x: 1200, y: 500, width: 25, height: 25, color: '#e74c3c', min: 500, max: 580, speed: 80, dir: 1, isVertical: true },
+        ],
+        ladders: [],
+        portals: [],
+        ferrisWheels: [],
+        goalX: 2200,
+        goalY: 600,
+    },
+    {
+        name: "Torres Gemelas (Wall Jump)",
+        platforms: [
+            { x: 200, y: 700, width: 80, height: 10, color: '#16a085' },
+            { x: 500, y: 300, width: 200, height: 10, color: '#16a085' },
+            { x: 900, y: 700, width: 80, height: 10, color: '#16a085' },
+        ],
+        walls: [
+            { x: 0, y: 780, width: 150, height: 20, color: '#27ae60' },
+            // Torre izquierda
+            { x: 300, y: 300, width: 20, height: 480, color: '#7f8c8d' },
+            { x: 480, y: 300, width: 20, height: 480, color: '#7f8c8d' },
+            // Torre derecha
+            { x: 720, y: 300, width: 20, height: 480, color: '#7f8c8d' },
+            { x: 900, y: 300, width: 20, height: 480, color: '#7f8c8d' },
+            // Puente superior
+            { x: 500, y: 300, width: 220, height: 15, color: '#2c3e50' },
+            // Techo meta
+            { x: 600, y: 150, width: 100, height: 10, color: '#27ae60' },
+        ],
+        boostZones: [],
+        obstacles: [
+            { x: 550, y: 270, width: 25, height: 25, color: '#e74c3c', min: 520, max: 680, speed: 120, dir: 1, isVertical: false },
+        ],
+        ladders: [],
+        portals: [],
+        ferrisWheels: [],
+        goalX: 630,
+        goalY: 100,
+    },
+    {
+        name: "Dimensión Portal",
+        platforms: [
+            { x: 400, y: 600, width: 100, height: 10, color: '#9b59b6' },
+            { x: 1200, y: 400, width: 120, height: 10, color: '#9b59b6' },
+            { x: 2000, y: 500, width: 100, height: 10, color: '#9b59b6' },
+        ],
+        walls: [
+            { x: 0, y: 780, width: 300, height: 20, color: '#27ae60' },
+            { x: 600, y: 500, width: 20, height: 280, color: '#7f8c8d' },
+            { x: 1400, y: 300, width: 20, height: 200, color: '#7f8c8d' },
+            { x: 1800, y: 600, width: 200, height: 20, color: '#7f8c8d' },
+            { x: 2200, y: 400, width: 150, height: 20, color: '#27ae60' },
+        ],
+        boostZones: [
+            { x: 100, y: 760, width: 100, height: 5, color: '#3498db' },
+        ],
+        obstacles: [
+            { x: 1250, y: 370, width: 25, height: 25, color: '#e74c3c', min: 1200, max: 1300, speed: 90, dir: 1, isVertical: false },
+        ],
+        ladders: [
+            { x: 580, y: 500, width: 20, height: 280, color: '#9b59b6' },
+        ],
+        portals: [
+            { id: 1, x: 450, y: 560, width: 30, height: 40, targetId: 2, color: '#f1c40f' },
+            { id: 2, x: 1220, y: 360, width: 30, height: 40, targetId: 3, color: '#e74c3c' },
+            { id: 3, x: 2020, y: 460, width: 30, height: 40, targetId: 4, color: '#2ecc71' },
+            { id: 4, x: 2250, y: 360, width: 30, height: 40, targetId: 1, color: '#3498db' },
+        ],
+        ferrisWheels: [],
+        goalX: 2280,
+        goalY: 350,
+    },
+    {
+        name: "Caos de Norias",
+        platforms: [
+            { x: 200, y: 650, width: 100, height: 10, color: '#e67e22' },
+            { x: 1500, y: 350, width: 120, height: 10, color: '#e67e22' },
+        ],
+        walls: [
+            { x: 0, y: 780, width: 250, height: 20, color: '#27ae60' },
+            { x: 1100, y: 500, width: 20, height: 280, color: '#7f8c8d' },
+            { x: 1650, y: 250, width: 100, height: 15, color: '#27ae60' },
+        ],
+        ferrisWheels: [
+            {
+                cx: 500, cy: 550, radius: 120, speed: 0.6, color: '#8e44ad',
+                platforms: [
+                    { angle: 0, width: 130, height: 10, x: 0, y: 0, vx: 0, vy: 0 },
+                    { angle: Math.PI * 0.66, width: 130, height: 10, x: 0, y: 0, vx: 0, vy: 0 },
+                    { angle: Math.PI * 1.33, width: 130, height: 10, x: 0, y: 0, vx: 0, vy: 0 },
+                ]
+            },
+            {
+                cx: 900, cy: 400, radius: 100, speed: -0.7, color: '#e74c3c',
+                platforms: [
+                    { angle: 0, width: 120, height: 10, x: 0, y: 0, vx: 0, vy: 0 },
+                    { angle: Math.PI, width: 120, height: 10, x: 0, y: 0, vx: 0, vy: 0 },
+                ]
+            },
+            {
+                cx: 1300, cy: 500, radius: 80, speed: 0.8, color: '#f39c12',
+                platforms: [
+                    { angle: 0, width: 100, height: 10, x: 0, y: 0, vx: 0, vy: 0 },
+                    { angle: Math.PI, width: 100, height: 10, x: 0, y: 0, vx: 0, vy: 0 },
+                ]
+            },
+        ],
+        boostZones: [],
+        obstacles: [
+            { x: 1500, y: 320, width: 20, height: 20, color: '#e74c3c', min: 1500, max: 1600, speed: 80, dir: 1, isVertical: false },
+        ],
+        ladders: [],
+        portals: [],
+        goalX: 1680,
+        goalY: 200,
+    },
+    {
+        name: "La Carrera de Obstáculos",
+        platforms: [
+            { x: 300, y: 700, width: 100, height: 10, color: '#c0392b' },
+            { x: 600, y: 650, width: 100, height: 10, color: '#c0392b' },
+            { x: 900, y: 600, width: 120, height: 10, color: '#c0392b' },
+            { x: 1200, y: 650, width: 100, height: 10, color: '#c0392b' },
+            { x: 1500, y: 550, width: 130, height: 10, color: '#c0392b' },
+            { x: 1800, y: 600, width: 100, height: 10, color: '#c0392b' },
+            { x: 2100, y: 680, width: 150, height: 10, color: '#c0392b' },
+        ],
+        walls: [
+            { x: 0, y: 780, width: 200, height: 20, color: '#27ae60' },
+            { x: 450, y: 650, width: 20, height: 130, color: '#7f8c8d' },
+            { x: 1050, y: 600, width: 20, height: 180, color: '#7f8c8d' },
+            { x: 1650, y: 550, width: 20, height: 230, color: '#7f8c8d' },
+        ],
+        boostZones: [
+            { x: 900, y: 580, width: 120, height: 5, color: '#3498db' },
+        ],
+        obstacles: [
+            { x: 350, y: 670, width: 25, height: 25, color: '#e74c3c', min: 300, max: 500, speed: 130, dir: 1, isVertical: false },
+            { x: 750, y: 620, width: 25, height: 25, color: '#e74c3c', min: 600, max: 760, speed: 110, dir: -1, isVertical: true },
+            { x: 1250, y: 600, width: 25, height: 25, color: '#e74c3c', min: 1200, max: 1400, speed: 140, dir: 1, isVertical: false },
+            { x: 1850, y: 560, width: 25, height: 25, color: '#e74c3c', min: 500, max: 580, speed: 90, dir: 1, isVertical: true },
+        ],
+        ladders: [],
+        portals: [],
+        ferrisWheels: [],
+        goalX: 2200,
+        goalY: 630,
+    },
+    {
+        name: "Puente Celestial",
+        platforms: [
+            { x: 100, y: 500, width: 80, height: 10, color: '#2980b9' },
+            { x: 300, y: 420, width: 80, height: 10, color: '#2980b9' },
+            { x: 500, y: 350, width: 80, height: 10, color: '#2980b9' },
+            { x: 700, y: 280, width: 80, height: 10, color: '#2980b9' },
+            { x: 900, y: 220, width: 100, height: 10, color: '#2980b9' },
+            { x: 1150, y: 280, width: 80, height: 10, color: '#2980b9' },
+            { x: 1350, y: 350, width: 80, height: 10, color: '#2980b9' },
+            { x: 1550, y: 280, width: 80, height: 10, color: '#2980b9' },
+            { x: 1750, y: 200, width: 100, height: 10, color: '#2980b9' },
+        ],
+        walls: [
+            { x: 0, y: 780, width: 150, height: 20, color: '#27ae60' },
+            { x: 0, y: 600, width: 80, height: 20, color: '#7f8c8d' },
+            // Columnas de soporte
+            { x: 900, y: 220, width: 10, height: 560, color: '#34495e' },
+            { x: 990, y: 220, width: 10, height: 560, color: '#34495e' },
+            // Meta
+            { x: 1850, y: 100, width: 100, height: 15, color: '#27ae60' },
+        ],
+        boostZones: [
+            { x: 900, y: 200, width: 100, height: 5, color: '#3498db' },
+        ],
+        obstacles: [
+            { x: 400, y: 320, width: 20, height: 20, color: '#e74c3c', min: 280, max: 400, speed: 70, dir: 1, isVertical: true },
+            { x: 1200, y: 250, width: 20, height: 20, color: '#e74c3c', min: 1150, max: 1350, speed: 100, dir: 1, isVertical: false },
+        ],
+        ladders: [
+            { x: 60, y: 600, width: 20, height: 180, color: '#9b59b6' },
+        ],
+        portals: [],
+        ferrisWheels: [],
+        goalX: 1880,
+        goalY: 50,
+    },
 ];
 
 // --- Lógica de Nivel y Juego ---
@@ -337,9 +545,10 @@ function checkCollision(obj1, obj2) {
            obj1.y + obj1.height > obj2.y;
 }
 
-function createNewPlayer(id) {
+function createNewPlayer(id, nickname) {
     players[id] = {
         id: id,
+        nickname: nickname || id.substring(0, 8),
         x: 50, y: 740, width: 20, height: 40,
         color: getRandomColor(),
         vx: 0, vy: 0, 
@@ -369,7 +578,11 @@ io.on('connection', (socket) => {
     
     localPlayersMap[socket.id] = 0; 
 
-    createNewPlayer(socket.id);
+    const hostname = os.hostname();
+    createNewPlayer(socket.id, hostname);
+    
+    // Enviar el hostname al cliente para usarlo como nametag por defecto
+    socket.emit('yourHostname', hostname);
     
     socket.emit('levelData', {
         platforms: currentPlatforms,
@@ -393,10 +606,37 @@ io.on('connection', (socket) => {
         const playerId = socket.id + '_L' + count; 
         localPlayersMap[socket.id] = count + 1;
 
-        createNewPlayer(playerId);
+        const mainPlayer = players[socket.id];
+        const baseNickname = mainPlayer ? mainPlayer.nickname : os.hostname();
+        createNewPlayer(playerId, baseNickname + '_L' + count);
         
         io.to(socket.id).emit('localPlayerCreated', { playerId: playerId });
         console.log(`Jugador local adicional creado: ${playerId}`);
+    });
+
+    // --- Evento para cambiar color y/o nickname ---
+    socket.on('setPlayerInfo', (data) => {
+        const targetId = data.playerId || socket.id;
+        const player = players[targetId];
+        if (!player) return;
+        
+        // Verificar que el jugador pertenece a este socket
+        if (!targetId.startsWith(socket.id)) return;
+        
+        // Cambiar color (validar formato hexadecimal)
+        if (data.color && /^#[0-9A-Fa-f]{6}$/.test(data.color)) {
+            player.color = data.color;
+        }
+
+        // --- NUEVO: Guardar Sistema Operativo ---
+        if (data.os) {
+            player.os = data.os;
+        }
+        
+        // Cambiar nickname 
+        if (data.nickname && typeof data.nickname === 'string') {
+            player.nickname = data.nickname.substring(0, 20); // Limitar a 20 caracteres
+        }
     });
 
     socket.on('playerAction', (data) => {
@@ -773,7 +1013,8 @@ setInterval(() => {
                 io.sockets.emit('gameOver', { 
                     winnerId: player.id, 
                     color: player.color,
-                    message: `¡Jugador ${player.id.substring(0, 4)} ha ganado! ¡60s restantes!`
+                    nickname: player.nickname,
+                    message: `¡${player.nickname} ha ganado! ¡60s restantes!`
                 });
                 
                 gameTimerHandle = setInterval(() => {
