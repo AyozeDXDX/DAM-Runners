@@ -578,11 +578,12 @@ io.on('connection', (socket) => {
     
     localPlayersMap[socket.id] = 0; 
 
-    const hostname = os.hostname();
-    createNewPlayer(socket.id, hostname);
+    // Usar un nombre genérico inicial, el cliente enviará su nickname guardado si lo tiene
+    const defaultNickname = `Runner-${socket.id.substring(0, 4)}`;
+    createNewPlayer(socket.id, defaultNickname);
     
-    // Enviar el hostname al cliente para usarlo como nametag por defecto
-    socket.emit('yourHostname', hostname);
+    // Enviar el hostname al cliente (necesario para la conexión)
+    socket.emit('yourHostname', os.hostname());
     
     socket.emit('levelData', {
         platforms: currentPlatforms,
@@ -600,15 +601,12 @@ io.on('connection', (socket) => {
 
     socket.on('requestLocalPlayer', () => {
         const count = localPlayersMap[socket.id] || 0;
-        
         if (count >= 3) return; 
         
         const playerId = socket.id + '_L' + count; 
         localPlayersMap[socket.id] = count + 1;
 
-        const mainPlayer = players[socket.id];
-        const baseNickname = mainPlayer ? mainPlayer.nickname : os.hostname();
-        createNewPlayer(playerId, baseNickname + '_L' + count);
+        createNewPlayer(playerId, `Runner-${playerId.substring(0, 4)}`);
         
         io.to(socket.id).emit('localPlayerCreated', { playerId: playerId });
         console.log(`Jugador local adicional creado: ${playerId}`);

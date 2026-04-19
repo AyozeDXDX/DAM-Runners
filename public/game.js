@@ -45,19 +45,22 @@ colorInput.style.cursor = 'pointer';
 colorInput.style.background = 'transparent';
 
 const hexInput = document.createElement('input');
-hexInput.type = 'text';
-hexInput.id = 'hexInput';
-hexInput.placeholder = '#2ecc71';
-hexInput.maxLength = 7;
-hexInput.style.width = '80px';
-hexInput.style.padding = '4px 8px';
-hexInput.style.border = '2px solid #f39c12';
-hexInput.style.borderRadius = '4px';
-hexInput.style.backgroundColor = 'rgba(0,0,0,0.3)';
-hexInput.style.color = '#ecf0f1';
-hexInput.style.fontFamily = 'monospace';
-hexInput.style.fontSize = '0.9em';
 hexInput.style.textAlign = 'center';
+
+const nameInput = document.createElement('input');
+nameInput.type = 'text';
+nameInput.id = 'nameInput';
+nameInput.placeholder = 'Tu Apodo';
+nameInput.value = localStorage.getItem('dam_runner_name') || '';
+nameInput.maxLength = 12;
+nameInput.style.width = '100px';
+nameInput.style.padding = '4px 8px';
+nameInput.style.border = '2px solid #f39c12';
+nameInput.style.borderRadius = '4px';
+nameInput.style.backgroundColor = 'rgba(0,0,0,0.3)';
+nameInput.style.color = '#ecf0f1';
+nameInput.style.fontSize = '0.9em';
+
 
 const colorApplyBtn = document.createElement('button');
 colorApplyBtn.textContent = 'Aplicar';
@@ -65,6 +68,7 @@ colorApplyBtn.style.padding = '4px 12px';
 colorApplyBtn.style.marginTop = '0';
 colorApplyBtn.style.fontSize = '0.85em';
 
+colorPickerContainer.appendChild(nameInput);
 colorPickerContainer.appendChild(colorLabel);
 colorPickerContainer.appendChild(colorInput);
 colorPickerContainer.appendChild(hexInput);
@@ -82,24 +86,40 @@ hexInput.addEventListener('input', () => {
     }
 });
 
-function applyColor() {
+function applySettings() {
     let color = hexInput.value || colorInput.value;
     if (!color.startsWith('#')) color = '#' + color;
+    
+    const nickname = nameInput.value.trim();
+    if (nickname) {
+        localStorage.setItem('dam_runner_name', nickname);
+    }
+
     if (/^#[0-9A-Fa-f]{6}$/.test(color)) {
-        socket.emit('setPlayerInfo', { color: color, os: myOS });
+        socket.emit('setPlayerInfo', { 
+            color: color, 
+            os: myOS,
+            nickname: nickname || undefined 
+        });
         colorInput.value = color;
         hexInput.value = color;
-        statusDiv.textContent = `✅ Color cambiado a ${color}`;
+        statusDiv.textContent = `✅ Ajustes actualizados`;
     } else {
         statusDiv.textContent = '❌ Código hex inválido. Usa formato: #RRGGBB';
     }
 }
 
-colorApplyBtn.addEventListener('click', applyColor);
+colorApplyBtn.addEventListener('click', applySettings);
 hexInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
         e.preventDefault();
-        applyColor();
+        applySettings();
+    }
+});
+nameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        applySettings();
     }
 });
 
@@ -714,17 +734,27 @@ socket.on('connect', () => {
 
 socket.on('yourHostname', (hostname) => {
     myHostname = hostname;
-    statusDiv.textContent = `Conectado como ${hostname}. Usa ESPACIO/W, A/D, S, J (Correr), SHIFT (Dash).`;
+    const savedName = localStorage.getItem('dam_runner_name');
+    statusDiv.textContent = `Conectado. Usa ESPACIO/W, A/D, S, J (Correr), SHIFT (Dash).`;
     
-    // --- NUEVO: Enviar info de OS para el jugador principal ---
-    socket.emit('setPlayerInfo', { playerId: socket.id, os: myOS });
+    // --- NUEVO: Enviar info de OS y Nickname (si existe) para el jugador principal ---
+    socket.emit('setPlayerInfo', { 
+        playerId: socket.id, 
+        os: myOS,
+        nickname: savedName || undefined
+    });
 });
 
 socket.on('localPlayerCreated', (data) => {
     if (!localPlayerIds.includes(data.playerId)) {
         localPlayerIds.push(data.playerId);
-        // --- NUEVO: Enviar info de OS para este jugador ---
-        socket.emit('setPlayerInfo', { playerId: data.playerId, os: myOS });
+        // --- NUEVO: Enviar info de OS y Nickname para este jugador ---
+        const savedName = localStorage.getItem('dam_runner_name');
+        socket.emit('setPlayerInfo', { 
+            playerId: data.playerId, 
+            os: myOS,
+            nickname: savedName ? `${savedName}_L${localPlayerIds.length - 1}` : undefined
+        });
     }
     if (showGamepadMenu) {
         buildGamepadMenu(); 
